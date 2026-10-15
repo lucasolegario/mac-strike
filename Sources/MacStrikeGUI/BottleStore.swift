@@ -18,12 +18,28 @@ final class BottleStore: ObservableObject {
 
     // Licensing
     @Published var licenseStatus: LicenseStatus = .unlicensed
+    @Published var entitlement: Entitlement = .community
     @Published var activating = false
     var licenseManager: LicenseManager {
         LicenseManager(storageURL: supportDir.appendingPathComponent("license.json"))
     }
-    var isPro: Bool { licenseStatus.isPro }
+    var isPro: Bool { entitlement.hasPro }
     var licensingConfigured: Bool { licenseManager.config.isConfigured }
+
+    /// Short human label for the Pro badge / status.
+    var entitlementLabel: String {
+        switch entitlement {
+        case .licensed:            return "Pro"
+        case .trial(let days):     return "Trial · \(days)d"
+        case .trialExpired:        return "MacStrike Pro"
+        case .community:           return "Pro"
+        }
+    }
+
+    func refreshEntitlement() {
+        licenseStatus = licenseManager.cachedStatus()
+        entitlement = licenseManager.entitlement()
+    }
 
     init() {
         let support = FileManager.default
@@ -34,7 +50,7 @@ final class BottleStore: ObservableObject {
         self.wine = WineInstallation(root: support.appendingPathComponent("wine"))
         try? FileManager.default.createDirectory(at: bottlesRoot, withIntermediateDirectories: true)
         reload()
-        licenseStatus = licenseManager.cachedStatus()
+        refreshEntitlement()
     }
 
     func activateLicense(_ key: String) {
@@ -43,7 +59,7 @@ final class BottleStore: ObservableObject {
         Task.detached {
             do {
                 _ = try mgr.activate(key: key)
-                await MainActor.run { self.licenseStatus = mgr.cachedStatus(); self.activating = false }
+                await MainActor.run { self.refreshEntitlement(); self.activating = false }
             } catch {
                 await MainActor.run { self.lastError = "\(error)"; self.activating = false }
             }
@@ -52,7 +68,7 @@ final class BottleStore: ObservableObject {
 
     func deactivateLicense() {
         licenseManager.deactivate()
-        licenseStatus = .unlicensed
+        refreshEntitlement()
     }
 
     var manager: BottleManager { BottleManager(wine: wine) }

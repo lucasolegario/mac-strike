@@ -70,18 +70,48 @@ public enum LicenseStatus: Sendable, Equatable {
     public var isPro: Bool { if case .active = self { return true } else { return false } }
 }
 
+/// Local record of when the free trial began.
+public struct Trial: Codable, Sendable, Equatable {
+    public var startedAt: Date
+    public init(startedAt: Date) { self.startedAt = startedAt }
+}
+
+/// The user's overall access level, combining license + trial.
+public enum Entitlement: Sendable, Equatable {
+    case licensed(License)               // paid, active license
+    case trial(daysLeft: Int)            // within the free trial window
+    case trialExpired                    // trial over, no license → free tier
+    case community                       // build has no product configured → all features open
+
+    /// Whether Pro features are unlocked right now.
+    public var hasPro: Bool {
+        switch self {
+        case .licensed, .trial, .community: return true
+        case .trialExpired: return false
+        }
+    }
+}
+
 public struct LicenseManager: Sendable {
     public let config: LicenseConfig
     public let storageURL: URL
     /// How long a cached license is trusted without re-validating online.
     public let offlineGrace: TimeInterval
+    /// Length of the free trial.
+    public let trialLength: TimeInterval
 
     public init(config: LicenseConfig = .current,
                 storageURL: URL,
-                offlineGrace: TimeInterval = 60 * 60 * 24 * 14) {
+                offlineGrace: TimeInterval = 60 * 60 * 24 * 14,
+                trialLength: TimeInterval = 60 * 60 * 24 * 7) {
         self.config = config
         self.storageURL = storageURL
         self.offlineGrace = offlineGrace
+        self.trialLength = trialLength
+    }
+
+    private var trialURL: URL {
+        storageURL.deletingLastPathComponent().appendingPathComponent("trial.json")
     }
 
     public enum LicenseError: Error, CustomStringConvertible {
@@ -122,6 +152,45 @@ public struct LicenseManager: Sendable {
         // Grace expired, but we keep the user as Pro rather than locking them out;
         // the GUI can trigger a background re-validation.
         return .active(lic)
+    }
+
+    // MARK: - Trial
+
+    public func trial() -> Trial? {
+        guard let data = try? Data(contentsOf: trialURL) else { return nil }
+        let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
+        return try? dec.decode(Trial.self, from: data)
+    }
+
+    /// Return the existing trial, or start one now (first run of a configured build).
+    @discardableResult
+    public func startTrialIfNeeded() -> Trial {
+        if let existing = trial() { return existing }
+        let t = Trial(startedAt: Date())
+        let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
+        try? FileManager.default.createDirectory(
+            at: trialURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        if let data = try? enc.encode(t) { try? data.write(to: trialURL, options: .atomic) }
+        return t
+    }
+
+    /// Whole days remaining in a trial (0 once expired). Pure, for testing.
+    public static func trialDaysLeft(startedAt: Date, now: Date, length: TimeInterval) -> Int {
+        let remaining = length - now.timeIntervalSince(startedAt)
+        if remaining <= 0 { return 0 }
+        return max(1, Int(ceil(remaining / (60 * 60 * 24))))
+    }
+
+    // MARK: - Overall entitlement (license + trial)
+
+    /// The effective access level. On a configured build this starts the trial on
+    /// first call. An unconfigured (open-source) build is always `.community`.
+    public func entitlement() -> Entitlement {
+        guard config.isConfigured else { return .community }
+        if case .active(let lic) = cachedStatus() { return .licensed(lic) }
+        let t = startTrialIfNeeded()
+        let left = Self.trialDaysLeft(startedAt: t.startedAt, now: Date(), length: trialLength)
+        return left > 0 ? .trial(daysLeft: left) : .trialExpired
     }
 
     // MARK: - Online activation

@@ -100,12 +100,12 @@ case "license":
     let sub = rest.first ?? "status"
     switch sub {
     case "status":
-        switch mgr.cachedStatus() {
-        case .active(let l): print("MacStrike Pro — active (\(l.email ?? l.key))")
-        case .unlicensed:    print("Free tier — no license activated.")
-        case .problem(let m): print("License problem: \(m)")
+        switch mgr.entitlement() {
+        case .licensed(let l): print("MacStrike Pro — licensed (\(l.email ?? l.key))")
+        case .trial(let d):    print("Free trial — \(d) day(s) left")
+        case .trialExpired:    print("Trial expired — free tier (activate a license for Pro)")
+        case .community:       print("Community build — all features unlocked (licensing not configured)")
         }
-        if !mgr.config.isConfigured { print("(build not configured for licensing yet)") }
     case "activate":
         guard rest.count >= 2 else { fail("license activate needs a <key>") }
         do {

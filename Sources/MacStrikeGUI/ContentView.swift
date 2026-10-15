@@ -36,7 +36,7 @@ struct ContentView: View {
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 Button { showingLicense = true } label: {
-                    Label(store.isPro ? "Pro" : "MacStrike Pro",
+                    Label(store.entitlementLabel,
                           systemImage: store.isPro ? "checkmark.seal.fill" : "seal")
                 }.tint(store.isPro ? .green : .accentColor)
             }
@@ -52,6 +52,18 @@ struct LicenseSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Label("MacStrike Pro", systemImage: "checkmark.seal.fill").font(.title2.bold())
+
+            switch store.entitlement {
+            case .trial(let days):
+                Text("Trial ativo — \(days) dia\(days == 1 ? "" : "s") restante\(days == 1 ? "" : "s").")
+                    .foregroundStyle(.blue)
+            case .trialExpired:
+                Text("Seu trial de 7 dias terminou. Ative uma licença para continuar com o Pro.")
+                    .foregroundStyle(.orange)
+            default:
+                EmptyView()
+            }
+
             switch store.licenseStatus {
             case .active(let l):
                 Text("Licença ativa ✓").foregroundStyle(.green)

@@ -214,6 +214,34 @@ do {
     check(mgr.cached() == nil, "deactivate clears the license")
 }
 
+print("\nTrial:")
+do {
+    let len: TimeInterval = 60 * 60 * 24 * 7
+    let start = Date()
+    check(LicenseManager.trialDaysLeft(startedAt: start, now: start, length: len) == 7, "fresh trial = 7 days")
+    let day3 = start.addingTimeInterval(60 * 60 * 24 * 3)
+    check(LicenseManager.trialDaysLeft(startedAt: start, now: day3, length: len) == 4, "after 3 days = 4 left")
+    let after = start.addingTimeInterval(len + 1)
+    check(LicenseManager.trialDaysLeft(startedAt: start, now: after, length: len) == 0, "expired = 0")
+
+    // entitlement flow on a configured build (lemonSqueezy is always configured).
+    let fm = FileManager.default
+    let dir = fm.temporaryDirectory.appendingPathComponent("ent-\(UUID().uuidString)")
+    try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+    let m = LicenseManager(config: LicenseConfig(provider: .lemonSqueezy),
+                           storageURL: dir.appendingPathComponent("license.json"))
+    let e = m.entitlement()
+    check(e.hasPro, "first run: trial grants Pro")
+    if case .trial(let d) = e { check(d == 7, "first run shows 7-day trial") } else { check(false, "first run is a trial") }
+    check(m.trial() != nil, "trial persisted on first entitlement check")
+
+    // community build (unconfigured) => always Pro, no trial file.
+    let m2 = LicenseManager(config: LicenseConfig(provider: .gumroad(productID: "REPLACE_WITH_YOUR_GUMROAD_PRODUCT_ID")),
+                            storageURL: dir.appendingPathComponent("license2.json"))
+    check(m2.entitlement() == .community && m2.entitlement().hasPro, "unconfigured build is community (all open)")
+    try? fm.removeItem(at: dir)
+}
+
 print("")
 if failures == 0 {
     print("All checks passed.")
