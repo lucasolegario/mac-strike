@@ -33,7 +33,7 @@ public struct LicenseConfig: Sendable {
     /// EDIT THIS: your real product. Until a real id is set, the app runs in the
     /// free tier and activation is disabled.
     public static let current = LicenseConfig(
-        provider: .gumroad(permalink: "zqoknc")
+        provider: .gumroad(permalink: "macstrike")
     )
 
     /// True once a real product id has been filled in.
