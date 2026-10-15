@@ -14,7 +14,7 @@ public enum SourceTweaks {
         /// Framerate cap (Source `fps_max`); nil leaves it uncapped.
         public var fpsMax: Int?
 
-        public init(audioMixahead: Double = 0.2, fpsMax: Int? = 144) {
+        public init(audioMixahead: Double = 0.3, fpsMax: Int? = 144) {
             self.audioMixahead = audioMixahead
             self.fpsMax = fpsMax
         }
