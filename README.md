@@ -53,15 +53,44 @@ third-party binaries**:
 - **Rosetta 2** installed (`softwareupdate --install-rosetta`).
 - Swift toolchain (Xcode or Command Line Tools) to build.
 
-## Install & build
+## Install
+
+### Homebrew (recommended — installs cleanly, no Gatekeeper prompt)
+
+Building from source via Homebrew produces a local binary macOS trusts, so there
+is no "unidentified developer" warning.
+
+```bash
+brew tap lucasolegario/mac-strike https://github.com/lucasolegario/mac-strike
+brew install --HEAD macstrike
+macstrike            # CLI help
+```
+
+### Build from source
 
 ```bash
 git clone https://github.com/lucasolegario/mac-strike.git
 cd mac-strike
 swift build
 swift run selftest        # runs the engine self-tests
-swift run macstrike       # shows CLI help
+swift run macstrike       # CLI help
+swift run macstrike-gui   # the SwiftUI app
 ```
+
+Requires the Swift toolchain (Xcode or Command Line Tools: `xcode-select --install`).
+
+### Downloading the app (DMG)
+
+If you download a **DMG build** that isn't signed with an Apple Developer ID,
+macOS Gatekeeper will warn on first open. To run it:
+
+- **Right-click** `MacStrike.app` → **Open** → **Open** (only needed once), **or**
+- remove the quarantine flag:
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/MacStrike.app
+  ```
+
+Signed, notarized builds open without any of this.
 
 ## Quick start — running a game
 
