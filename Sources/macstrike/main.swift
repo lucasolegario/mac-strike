@@ -46,6 +46,7 @@ guard let command = args.first else {
       steam  <prefix-dir> run                launch the installed Steam client
       steam  <prefix-dir> play <appid>       launch a Steam game (CS2 = 730)
       steam  <prefix-dir> status             is Steam installed? show the play command
+      steam  <prefix-dir> disable-overlay    turn off the Steam overlay (close Steam first)
       cmd    <prefix-dir> <exe> [args...]    print the exact launch command
       run    <prefix-dir> <exe> [args...]    launch the game (requires Wine installed)
 
@@ -161,6 +162,10 @@ case "steam":
         let bottle = try BottleManager(wine: wine).load(prefixPath: URL(fileURLWithPath: dir))
         let steam = SteamProvisioner(launcher: GameLauncher(wine: wine))
         switch sub {
+        case "disable-overlay":
+            let n = try SteamConfig.disableOverlay(in: bottle)
+            print(n > 0 ? "Steam overlay disabled in \(n) config(s). (Make sure Steam was closed.)"
+                        : "Nothing changed — overlay already off, or Steam hasn't created a config yet.")
         case "status":
             if let exe = SteamProvisioner.installedSteamExe(in: bottle) {
                 print("Steam installed: \(exe.path)")

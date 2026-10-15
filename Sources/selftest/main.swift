@@ -169,6 +169,17 @@ do {
     try? fm.removeItem(at: root); try? fm.removeItem(at: flat)
 }
 
+print("\nSteamConfig (overlay off):")
+do {
+    let on = "\t\t\t\t\"EnableGameOverlay\"\t\t\"1\"\n"
+    let r = SteamConfig.disableOverlayInVDF(on)
+    check(r.changed && r.text.contains("\"EnableGameOverlay\"\t\t\"0\""), "flips EnableGameOverlay 1 -> 0")
+    let off = "\t\"EnableGameOverlay\"\t\t\"0\"\n"
+    check(!SteamConfig.disableOverlayInVDF(off).changed, "already off => no change")
+    let none = "\"SomethingElse\" \"1\""
+    check(!SteamConfig.disableOverlayInVDF(none).changed, "no overlay key => no change")
+}
+
 print("\nSourceTweaks:")
 do {
     let cfg = SourceTweaks.autoexecContents(.init(audioMixahead: 0.2, fpsMax: 144))
