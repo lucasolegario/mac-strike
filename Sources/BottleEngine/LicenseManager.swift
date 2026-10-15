@@ -12,8 +12,10 @@ import Foundation
 // └────────────────────────────────────────────────────────────────────────────┘
 
 public enum LicenseProvider: Codable, Sendable, Equatable {
-    /// Gumroad: verify at /v2/licenses/verify with the product id.
-    case gumroad(productID: String)
+    /// Gumroad: verify at /v2/licenses/verify with the product permalink
+    /// (the short slug in the product URL, e.g. "zqoknc" in
+    /// https://you.gumroad.com/l/zqoknc).
+    case gumroad(permalink: String)
     /// Lemon Squeezy: activate at /v1/licenses/activate (store/product checked server-side).
     case lemonSqueezy
 }
@@ -31,13 +33,13 @@ public struct LicenseConfig: Sendable {
     /// EDIT THIS: your real product. Until a real id is set, the app runs in the
     /// free tier and activation is disabled.
     public static let current = LicenseConfig(
-        provider: .gumroad(productID: "REPLACE_WITH_YOUR_GUMROAD_PRODUCT_ID")
+        provider: .gumroad(permalink: "zqoknc")
     )
 
     /// True once a real product id has been filled in.
     public var isConfigured: Bool {
         switch provider {
-        case .gumroad(let id): return !id.isEmpty && !id.hasPrefix("REPLACE_WITH")
+        case .gumroad(let p): return !p.isEmpty && !p.hasPrefix("REPLACE_WITH")
         case .lemonSqueezy:    return true
         }
     }
@@ -212,9 +214,9 @@ public struct LicenseManager: Sendable {
     private func post(for key: String) throws -> Data {
         let (url, body, headers): (URL, String, [String: String])
         switch config.provider {
-        case .gumroad(let productID):
+        case .gumroad(let permalink):
             url = URL(string: "https://api.gumroad.com/v2/licenses/verify")!
-            body = "product_id=\(enc(productID))&license_key=\(enc(key))&increment_uses_count=false"
+            body = "product_permalink=\(enc(permalink))&license_key=\(enc(key))&increment_uses_count=false"
             headers = ["Content-Type": "application/x-www-form-urlencoded"]
         case .lemonSqueezy:
             url = URL(string: "https://api.lemonsqueezy.com/v1/licenses/activate")!

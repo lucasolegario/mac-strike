@@ -173,20 +173,20 @@ print("\nLicenseManager (pure parsing):")
 do {
     // Gumroad: valid purchase.
     let ok = #"{"success":true,"uses":1,"purchase":{"email":"a@b.com","refunded":false,"disputed":false,"chargebacked":false}}"#.data(using: .utf8)!
-    let lic = try LicenseManager.parse(ok, provider: .gumroad(productID: "p"), key: "ABC-123")
+    let lic = try LicenseManager.parse(ok, provider: .gumroad(permalink: "p"), key: "ABC-123")
     check(lic.key == "ABC-123" && lic.email == "a@b.com", "gumroad valid key parses")
 
     // Gumroad: refunded -> rejected.
     let refunded = #"{"success":true,"purchase":{"refunded":true}}"#.data(using: .utf8)!
     var threw = false
-    do { _ = try LicenseManager.parse(refunded, provider: .gumroad(productID: "p"), key: "X") }
+    do { _ = try LicenseManager.parse(refunded, provider: .gumroad(permalink: "p"), key: "X") }
     catch { threw = true }
     check(threw, "gumroad refunded purchase rejected")
 
     // Gumroad: not found -> rejected.
     let bad = #"{"success":false,"message":"That license does not exist."}"#.data(using: .utf8)!
     threw = false
-    do { _ = try LicenseManager.parse(bad, provider: .gumroad(productID: "p"), key: "X") }
+    do { _ = try LicenseManager.parse(bad, provider: .gumroad(permalink: "p"), key: "X") }
     catch { threw = true }
     check(threw, "gumroad unknown key rejected")
 
@@ -196,7 +196,7 @@ do {
     check(lic2.instanceID == "inst_1" && lic2.email == "c@d.com", "lemonsqueezy activation parses")
 
     // Config gating.
-    let unset = LicenseConfig(provider: .gumroad(productID: "REPLACE_WITH_YOUR_GUMROAD_PRODUCT_ID"))
+    let unset = LicenseConfig(provider: .gumroad(permalink: "REPLACE_WITH_YOUR_GUMROAD_PRODUCT_ID"))
     check(!unset.isConfigured, "placeholder product id => not configured")
     check(LicenseConfig(provider: .lemonSqueezy).isConfigured, "lemonsqueezy is always configured")
 
@@ -236,7 +236,7 @@ do {
     check(m.trial() != nil, "trial persisted on first entitlement check")
 
     // community build (unconfigured) => always Pro, no trial file.
-    let m2 = LicenseManager(config: LicenseConfig(provider: .gumroad(productID: "REPLACE_WITH_YOUR_GUMROAD_PRODUCT_ID")),
+    let m2 = LicenseManager(config: LicenseConfig(provider: .gumroad(permalink: "REPLACE_WITH_YOUR_GUMROAD_PRODUCT_ID")),
                             storageURL: dir.appendingPathComponent("license2.json"))
     check(m2.entitlement() == .community && m2.entitlement().hasPro, "unconfigured build is community (all open)")
     try? fm.removeItem(at: dir)
