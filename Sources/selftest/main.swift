@@ -45,12 +45,13 @@ do {
     let env = LaunchEnvironment.make(for: bottle(.wined3d), wine: wine)
     let ov = env["WINEDLLOVERRIDES"] ?? ""
     check(!ov.contains("d3d11") && !ov.contains("dxgi"), "wined3d has no graphics DLL overrides")
-    check(ov.contains("gameoverlayrenderer64="), "overlay disabled by default")
+    // Overlay is NOT blocked by default (VAC-safe).
+    check(!ov.contains("gameoverlayrenderer"), "overlay NOT blocked by default (VAC-safe)")
 }
 do {
-    var b = bottle(.d3dmetal); b.disableSteamOverlay = false
+    var b = bottle(.d3dmetal); b.disableSteamOverlay = true
     let env = LaunchEnvironment.make(for: b, wine: wine)
-    check(!(env["WINEDLLOVERRIDES"] ?? "").contains("gameoverlayrenderer"), "overlay override off when disabled")
+    check((env["WINEDLLOVERRIDES"] ?? "").contains("gameoverlayrenderer64="), "overlay blocked only when opted in")
 }
 do {
     let env = LaunchEnvironment.make(for: bottle(.d3dmetal, sync: false), wine: wine)

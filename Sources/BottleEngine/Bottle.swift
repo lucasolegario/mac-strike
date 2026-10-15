@@ -20,8 +20,9 @@ public struct Bottle: Codable, Sendable, Identifiable {
     public var synchronizationEnabled: Bool
     /// Performance tunables (shader cache, async, HUD, …).
     public var performance: PerformanceProfile
-    /// Block the Steam in-game overlay by disabling its injected DLL. The overlay
-    /// spends real CPU under Wine (audio underruns + heat) and games don't need it.
+    /// Block the Steam in-game overlay by disabling its injected DLL. Saves a
+    /// little CPU, but ⚠️ tampering with the overlay DLL can trip anti-cheat (VAC),
+    /// so this is OFF by default and should stay off for VAC-protected games.
     public var disableSteamOverlay: Bool
     /// DLL base names actually installed by `install-graphics` (e.g. d3d11, dxgi,
     /// winemetal). When set, these drive `WINEDLLOVERRIDES` instead of the
@@ -39,7 +40,7 @@ public struct Bottle: Codable, Sendable, Identifiable {
         graphicsBackend: GraphicsBackend = .d3dmetal,
         synchronizationEnabled: Bool = true,
         performance: PerformanceProfile = .balanced,
-        disableSteamOverlay: Bool = true,
+        disableSteamOverlay: Bool = false,
         installedGraphicsDLLs: [String] = [],
         extraEnvironment: [String: String] = [:]
     ) {
@@ -84,7 +85,7 @@ public struct Bottle: Codable, Sendable, Identifiable {
         graphicsBackend = try c.decodeIfPresent(GraphicsBackend.self, forKey: .graphicsBackend) ?? .d3dmetal
         synchronizationEnabled = try c.decodeIfPresent(Bool.self, forKey: .synchronizationEnabled) ?? true
         performance = try c.decodeIfPresent(PerformanceProfile.self, forKey: .performance) ?? .balanced
-        disableSteamOverlay = try c.decodeIfPresent(Bool.self, forKey: .disableSteamOverlay) ?? true
+        disableSteamOverlay = try c.decodeIfPresent(Bool.self, forKey: .disableSteamOverlay) ?? false
         installedGraphicsDLLs = try c.decodeIfPresent([String].self, forKey: .installedGraphicsDLLs) ?? []
         extraEnvironment = try c.decodeIfPresent([String: String].self, forKey: .extraEnvironment) ?? [:]
     }
