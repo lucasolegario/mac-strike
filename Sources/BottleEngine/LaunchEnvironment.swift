@@ -45,8 +45,15 @@ public enum LaunchEnvironment {
         let overrides = bottle.installedGraphicsDLLs.isEmpty
             ? bottle.graphicsBackend.overriddenDLLs
             : bottle.installedGraphicsDLLs
-        if !overrides.isEmpty {
-            env["WINEDLLOVERRIDES"] = overrides.map { "\($0)=n,b" }.joined(separator: ";")
+        var overrideParts = overrides.map { "\($0)=n,b" }
+        // Block the Steam overlay by disabling its injected DLL (empty override
+        // = "do not load"). Removes the overlay's CPU cost under Wine.
+        if bottle.disableSteamOverlay {
+            overrideParts.append("gameoverlayrenderer64=")
+            overrideParts.append("gameoverlayrenderer=")
+        }
+        if !overrideParts.isEmpty {
+            env["WINEDLLOVERRIDES"] = overrideParts.joined(separator: ";")
         }
 
         // --- Performance profile (shader cache, async, HUD, GPU) -------------

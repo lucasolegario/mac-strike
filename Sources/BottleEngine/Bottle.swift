@@ -20,6 +20,9 @@ public struct Bottle: Codable, Sendable, Identifiable {
     public var synchronizationEnabled: Bool
     /// Performance tunables (shader cache, async, HUD, …).
     public var performance: PerformanceProfile
+    /// Block the Steam in-game overlay by disabling its injected DLL. The overlay
+    /// spends real CPU under Wine (audio underruns + heat) and games don't need it.
+    public var disableSteamOverlay: Bool
     /// DLL base names actually installed by `install-graphics` (e.g. d3d11, dxgi,
     /// winemetal). When set, these drive `WINEDLLOVERRIDES` instead of the
     /// backend's nominal list — DXMT and Apple GPTK ship different DLL sets.
@@ -36,6 +39,7 @@ public struct Bottle: Codable, Sendable, Identifiable {
         graphicsBackend: GraphicsBackend = .d3dmetal,
         synchronizationEnabled: Bool = true,
         performance: PerformanceProfile = .balanced,
+        disableSteamOverlay: Bool = true,
         installedGraphicsDLLs: [String] = [],
         extraEnvironment: [String: String] = [:]
     ) {
@@ -47,6 +51,7 @@ public struct Bottle: Codable, Sendable, Identifiable {
         self.graphicsBackend = graphicsBackend
         self.synchronizationEnabled = synchronizationEnabled
         self.performance = performance
+        self.disableSteamOverlay = disableSteamOverlay
         self.installedGraphicsDLLs = installedGraphicsDLLs
         self.extraEnvironment = extraEnvironment
     }
@@ -66,7 +71,7 @@ public struct Bottle: Codable, Sendable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id, name, prefixPath, architecture, windowsVersion
         case graphicsBackend, synchronizationEnabled, performance
-        case installedGraphicsDLLs, extraEnvironment
+        case disableSteamOverlay, installedGraphicsDLLs, extraEnvironment
     }
 
     public init(from decoder: Decoder) throws {
@@ -79,6 +84,7 @@ public struct Bottle: Codable, Sendable, Identifiable {
         graphicsBackend = try c.decodeIfPresent(GraphicsBackend.self, forKey: .graphicsBackend) ?? .d3dmetal
         synchronizationEnabled = try c.decodeIfPresent(Bool.self, forKey: .synchronizationEnabled) ?? true
         performance = try c.decodeIfPresent(PerformanceProfile.self, forKey: .performance) ?? .balanced
+        disableSteamOverlay = try c.decodeIfPresent(Bool.self, forKey: .disableSteamOverlay) ?? true
         installedGraphicsDLLs = try c.decodeIfPresent([String].self, forKey: .installedGraphicsDLLs) ?? []
         extraEnvironment = try c.decodeIfPresent([String: String].self, forKey: .extraEnvironment) ?? [:]
     }
