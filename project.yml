@@ -1,0 +1,38 @@
+# XcodeGen spec — gera um MacStrike.app "de verdade" (bundle assinável).
+# Opcional: a forma mais simples é abrir Package.swift direto no Xcode e rodar o
+# scheme "macstrike-gui". Use isto quando quiser um .app empacotável/distribuível.
+#
+#   brew install xcodegen
+#   xcodegen generate
+#   open MacStrike.xcodeproj
+name: MacStrike
+options:
+  bundleIdPrefix: com.macstrike
+  deploymentTarget:
+    macOS: "13.0"
+packages:
+  BottleEngine:
+    path: .
+targets:
+  MacStrike:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/MacStrikeGUI
+    dependencies:
+      - package: BottleEngine
+        product: BottleEngine
+    info:
+      path: GUISupport/Info.plist
+      properties:
+        CFBundleName: MacStrike
+        CFBundleDisplayName: MacStrike
+        LSMinimumSystemVersion: "13.0"
+        NSHighResolutionCapable: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.macstrike.app
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_STYLE: Automatic
