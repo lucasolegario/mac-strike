@@ -37,6 +37,9 @@ guard let command = args.first else {
     Commands:
       create <name> [--prefix DIR] [--arch win64|win32] [--backend d3dmetal|dxvk|wined3d] [--perf balanced|turbo]
       info   <prefix-dir>
+      license activate <key>                activate a MacStrike Pro license
+      license status                        show license state
+      license deactivate                    remove the stored license
       fetch-dxmt                            download DXMT (open D3D11->Metal) into MacStrike
       install-graphics <prefix-dir> --from DIR   copy backend DLLs into the bottle
       steam  <prefix-dir> install [--gui]    download + install Windows Steam in the bottle
@@ -88,6 +91,32 @@ case "info":
         print("Launch environment:")
         for (k, v) in env.sorted(by: { $0.key < $1.key }) { print("  \(k)=\(v)") }
     } catch { fail("\(error)") }
+
+case "license":
+    let support = FileManager.default
+        .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        .appendingPathComponent("MacStrike")
+    let mgr = LicenseManager(storageURL: support.appendingPathComponent("license.json"))
+    let sub = rest.first ?? "status"
+    switch sub {
+    case "status":
+        switch mgr.cachedStatus() {
+        case .active(let l): print("MacStrike Pro — active (\(l.email ?? l.key))")
+        case .unlicensed:    print("Free tier — no license activated.")
+        case .problem(let m): print("License problem: \(m)")
+        }
+        if !mgr.config.isConfigured { print("(build not configured for licensing yet)") }
+    case "activate":
+        guard rest.count >= 2 else { fail("license activate needs a <key>") }
+        do {
+            let l = try mgr.activate(key: rest[1])
+            print("Activated. Welcome to MacStrike Pro\(l.email.map { " (\($0))" } ?? "").")
+        } catch { fail("\(error)") }
+    case "deactivate":
+        mgr.deactivate(); print("License removed.")
+    default:
+        fail("unknown license subcommand '\(sub)'")
+    }
 
 case "fetch-dxmt":
     let support = FileManager.default

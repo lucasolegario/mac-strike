@@ -169,6 +169,51 @@ do {
     try? fm.removeItem(at: root); try? fm.removeItem(at: flat)
 }
 
+print("\nLicenseManager (pure parsing):")
+do {
+    // Gumroad: valid purchase.
+    let ok = #"{"success":true,"uses":1,"purchase":{"email":"a@b.com","refunded":false,"disputed":false,"chargebacked":false}}"#.data(using: .utf8)!
+    let lic = try LicenseManager.parse(ok, provider: .gumroad(productID: "p"), key: "ABC-123")
+    check(lic.key == "ABC-123" && lic.email == "a@b.com", "gumroad valid key parses")
+
+    // Gumroad: refunded -> rejected.
+    let refunded = #"{"success":true,"purchase":{"refunded":true}}"#.data(using: .utf8)!
+    var threw = false
+    do { _ = try LicenseManager.parse(refunded, provider: .gumroad(productID: "p"), key: "X") }
+    catch { threw = true }
+    check(threw, "gumroad refunded purchase rejected")
+
+    // Gumroad: not found -> rejected.
+    let bad = #"{"success":false,"message":"That license does not exist."}"#.data(using: .utf8)!
+    threw = false
+    do { _ = try LicenseManager.parse(bad, provider: .gumroad(productID: "p"), key: "X") }
+    catch { threw = true }
+    check(threw, "gumroad unknown key rejected")
+
+    // Lemon Squeezy: activated.
+    let ls = #"{"activated":true,"instance":{"id":"inst_1"},"meta":{"customer_email":"c@d.com"}}"#.data(using: .utf8)!
+    let lic2 = try LicenseManager.parse(ls, provider: .lemonSqueezy, key: "LS-1")
+    check(lic2.instanceID == "inst_1" && lic2.email == "c@d.com", "lemonsqueezy activation parses")
+
+    // Config gating.
+    let unset = LicenseConfig(provider: .gumroad(productID: "REPLACE_WITH_YOUR_GUMROAD_PRODUCT_ID"))
+    check(!unset.isConfigured, "placeholder product id => not configured")
+    check(LicenseConfig(provider: .lemonSqueezy).isConfigured, "lemonsqueezy is always configured")
+
+    // Persistence round-trip + offline grace.
+    let fm = FileManager.default
+    let path = fm.temporaryDirectory.appendingPathComponent("lic-\(UUID().uuidString).json")
+    let mgr = LicenseManager(config: LicenseConfig(provider: .lemonSqueezy), storageURL: path)
+    check(mgr.cachedStatus() == .unlicensed, "no file => unlicensed")
+    let now = Date()
+    let saved = License(key: "K", email: nil, instanceID: nil, activatedAt: now, lastValidated: now)
+    let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601
+    try enc.encode(saved).write(to: path)
+    check(mgr.cachedStatus().isPro, "cached license => Pro")
+    mgr.deactivate()
+    check(mgr.cached() == nil, "deactivate clears the license")
+}
+
 print("")
 if failures == 0 {
     print("All checks passed.")

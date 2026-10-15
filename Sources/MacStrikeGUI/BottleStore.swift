@@ -16,6 +16,15 @@ final class BottleStore: ObservableObject {
     let bottlesRoot: URL
     @Published var wine: WineInstallation
 
+    // Licensing
+    @Published var licenseStatus: LicenseStatus = .unlicensed
+    @Published var activating = false
+    var licenseManager: LicenseManager {
+        LicenseManager(storageURL: supportDir.appendingPathComponent("license.json"))
+    }
+    var isPro: Bool { licenseStatus.isPro }
+    var licensingConfigured: Bool { licenseManager.config.isConfigured }
+
     init() {
         let support = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -25,6 +34,25 @@ final class BottleStore: ObservableObject {
         self.wine = WineInstallation(root: support.appendingPathComponent("wine"))
         try? FileManager.default.createDirectory(at: bottlesRoot, withIntermediateDirectories: true)
         reload()
+        licenseStatus = licenseManager.cachedStatus()
+    }
+
+    func activateLicense(_ key: String) {
+        activating = true
+        let mgr = licenseManager
+        Task.detached {
+            do {
+                _ = try mgr.activate(key: key)
+                await MainActor.run { self.licenseStatus = mgr.cachedStatus(); self.activating = false }
+            } catch {
+                await MainActor.run { self.lastError = "\(error)"; self.activating = false }
+            }
+        }
+    }
+
+    func deactivateLicense() {
+        licenseManager.deactivate()
+        licenseStatus = .unlicensed
     }
 
     var manager: BottleManager { BottleManager(wine: wine) }

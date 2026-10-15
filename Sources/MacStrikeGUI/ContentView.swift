@@ -6,6 +6,7 @@ struct ContentView: View {
     @EnvironmentObject var store: BottleStore
     @State private var selection: Bottle.ID?
     @State private var showingNew = false
+    @State private var showingLicense = false
 
     var body: some View {
         NavigationSplitView {
@@ -28,9 +29,55 @@ struct ContentView: View {
         }
         .overlay(alignment: .bottom) { if store.busy { BusyBar() } }
         .sheet(isPresented: $showingNew) { NewBottleSheet() }
+        .sheet(isPresented: $showingLicense) { LicenseSheet() }
         .alert("Erro", isPresented: .constant(store.lastError != nil)) {
             Button("OK") { store.lastError = nil }
         } message: { Text(store.lastError ?? "") }
+        .toolbar {
+            ToolbarItem(placement: .automatic) {
+                Button { showingLicense = true } label: {
+                    Label(store.isPro ? "Pro" : "MacStrike Pro",
+                          systemImage: store.isPro ? "checkmark.seal.fill" : "seal")
+                }.tint(store.isPro ? .green : .accentColor)
+            }
+        }
+    }
+}
+
+struct LicenseSheet: View {
+    @EnvironmentObject var store: BottleStore
+    @Environment(\.dismiss) var dismiss
+    @State private var key = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("MacStrike Pro", systemImage: "checkmark.seal.fill").font(.title2.bold())
+            switch store.licenseStatus {
+            case .active(let l):
+                Text("Licença ativa ✓").foregroundStyle(.green)
+                if let email = l.email { Text(email).font(.caption).foregroundStyle(.secondary) }
+                Button("Remover licença", role: .destructive) { store.deactivateLicense() }
+            default:
+                Text("Ative sua licença lifetime para desbloquear os recursos Pro.")
+                    .font(.callout).foregroundStyle(.secondary)
+                TextField("Chave de licença", text: $key)
+                    .textFieldStyle(.roundedBorder).disabled(store.activating)
+                if !store.licensingConfigured {
+                    Text("⚠︎ Este build ainda não tem o produto configurado (veja LicenseConfig).")
+                        .font(.caption).foregroundStyle(.orange)
+                }
+                HStack {
+                    if store.activating { ProgressView().controlSize(.small) }
+                    Spacer()
+                    Button("Ativar") { store.activateLicense(key) }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(key.isEmpty || store.activating || !store.licensingConfigured)
+                }
+            }
+            Divider()
+            HStack { Spacer(); Button("Fechar") { dismiss() } }
+        }
+        .padding(20).frame(width: 420)
     }
 }
 
@@ -165,7 +212,7 @@ struct NewBottleSheet: View {
     @Environment(\.dismiss) var dismiss
     @State private var name = "CS2"
     @State private var backend: GraphicsBackend = .d3dmetal
-    @State private var turbo = true
+    @State private var turbo = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -174,7 +221,16 @@ struct NewBottleSheet: View {
             Picker("Backend gráfico", selection: $backend) {
                 ForEach(GraphicsBackend.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }
-            Toggle("Perfil turbo (HUD + tudo ligado)", isOn: $turbo)
+            Toggle(isOn: $turbo) {
+                HStack(spacing: 6) {
+                    Text("Perfil turbo (HUD + tudo ligado)")
+                    if !store.isPro {
+                        Text("PRO").font(.caption2.bold()).padding(.horizontal, 5).padding(.vertical, 1)
+                            .background(.yellow.opacity(0.25)).clipShape(Capsule())
+                    }
+                }
+            }
+            .disabled(!store.isPro)
             HStack {
                 Spacer()
                 Button("Cancelar") { dismiss() }
@@ -184,5 +240,6 @@ struct NewBottleSheet: View {
             }
         }
         .padding(20).frame(width: 380)
+        .onAppear { turbo = store.isPro }
     }
 }
