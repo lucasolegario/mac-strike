@@ -106,11 +106,21 @@ public struct SteamProvisioner: Sendable {
     ]
 
     /// Launch a Steam game by app ID (CS2 = 730) via `steam.exe -applaunch <id>`.
+    ///
+    /// For known Source games, this also writes an `autoexec.cfg` with the audio/
+    /// FPS tweaks and passes `+exec autoexec` so they load on start. Pass
+    /// `tweaks: nil` to skip that.
     @discardableResult
-    public func play(appID: Int, in bottle: Bottle) throws -> Process {
+    public func play(appID: Int, in bottle: Bottle,
+                     tweaks: SourceTweaks.Settings? = SourceTweaks.Settings()) throws -> Process {
         guard let exe = Self.installedSteamExe(in: bottle) else { throw SteamError.notInstalled }
+        var gameArgs = ["-applaunch", String(appID)]
+        if let tweaks, SourceTweaks.isKnownSourceGame(appID) {
+            _ = try? SourceTweaks.writeAutoexec(for: appID, in: bottle, settings: tweaks)
+            gameArgs += ["+exec", "autoexec"]
+        }
         return try launcher.launch(bottle: bottle, exePath: exe.path,
-                                   arguments: Self.cefWorkaroundArgs + ["-applaunch", String(appID)])
+                                   arguments: Self.cefWorkaroundArgs + gameArgs)
     }
 
     /// The shell-equivalent command to play an app ID (for logging / dry runs).

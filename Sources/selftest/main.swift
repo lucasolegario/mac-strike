@@ -169,6 +169,30 @@ do {
     try? fm.removeItem(at: root); try? fm.removeItem(at: flat)
 }
 
+print("\nSourceTweaks:")
+do {
+    let cfg = SourceTweaks.autoexecContents(.init(audioMixahead: 0.2, fpsMax: 144))
+    check(cfg.contains("snd_mixahead \"0.2\""), "autoexec sets snd_mixahead")
+    check(cfg.contains("fps_max \"144\""), "autoexec sets fps_max")
+    check(cfg.contains("[MacStrike] autoexec loaded"), "autoexec has the marker echo")
+    let noCap = SourceTweaks.autoexecContents(.init(audioMixahead: 0.1, fpsMax: nil))
+    check(!noCap.contains("fps_max"), "no fps_max line when uncapped")
+    check(SourceTweaks.isKnownSourceGame(SteamApp.cs2), "CS2 is a known Source game")
+    check(!SourceTweaks.isKnownSourceGame(SteamApp.gtaV), "GTA V is not treated as Source")
+
+    // writeAutoexec into a simulated install.
+    let fm = FileManager.default
+    let tmp = fm.temporaryDirectory.appendingPathComponent("st-\(UUID().uuidString)")
+    let b = Bottle(name: "CS2", prefixPath: tmp, graphicsBackend: .d3dmetal)
+    let cfgDir = tmp.appendingPathComponent("drive_c/Program Files (x86)/Steam/steamapps/common/Counter-Strike Global Offensive/game/csgo/cfg")
+    check((try? SourceTweaks.writeAutoexec(for: SteamApp.cs2, in: b)) as? URL == nil,
+          "no cfg dir yet => nothing written")
+    try fm.createDirectory(at: cfgDir, withIntermediateDirectories: true)
+    let written = try SourceTweaks.writeAutoexec(for: SteamApp.cs2, in: b)
+    check(written != nil && fm.fileExists(atPath: written!.path), "autoexec.cfg written when game installed")
+    try? fm.removeItem(at: tmp)
+}
+
 print("\nLicenseManager (pure parsing):")
 do {
     // Gumroad: valid purchase.
