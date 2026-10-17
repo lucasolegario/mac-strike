@@ -19,6 +19,11 @@ final class AppModel: ObservableObject {
     @Published var log = ""
     @Published var lastError: String?
 
+    // Launch progress (what the overlay shows while a game is starting)
+    @Published private(set) var launchPhase: LaunchPhase = .idle
+    @Published private(set) var launchingGame: Game?
+    private var launchWatch: Task<Void, Never>?
+
     // Licensing
     @Published var licenseStatus: LicenseStatus = .unlicensed
     @Published var entitlement: Entitlement = .community
@@ -113,22 +118,90 @@ final class AppModel: ObservableObject {
     // MARK: - Actions
 
     /// Launch the game: via Steam for Steam titles, directly for custom ones.
+    ///
+    /// Fires the launch, then watches for Steam and the game process so the UI
+    /// can report real progress instead of leaving the user staring at nothing
+    /// for the ~40s a cold start takes.
     func play(_ game: Game) {
+        guard launchPhase == .idle else { return }   // already launching
         let b = bottle(for: game)
+        launchingGame = game
+        launchPhase = game.steamAppID != nil ? .startingSteam : .waitingForGame
+
         do {
             if let appID = game.steamAppID {
                 _ = try steam.play(appID: appID, in: b)
-                appendLog("▶ Jogando \(game.name) (app \(appID))")
+                appendLog("▶ Playing \(game.name) (app \(appID))")
             } else if let exe = game.exePath {
                 _ = try launcher.launch(bottle: b, exePath: exe)
-                appendLog("▶ Rodando \(exe)")
+                appendLog("▶ Running \(exe)")
             } else {
-                lastError = "Esse jogo não tem executável definido."
+                finishLaunch(.failed("Esse jogo não tem executável definido."))
+                return
             }
         } catch {
-            lastError = "\(error)"
             appendLog("✗ \(error)")
+            finishLaunch(.failed("\(error)"))
+            return
         }
+
+        launchWatch?.cancel()
+        launchWatch = Task { await self.watchLaunch(of: game) }
+    }
+
+    /// Poll for Steam, then for the game, updating `launchPhase` as each appears.
+    private func watchLaunch(of game: Game) async {
+        // Steam titles: wait for the client first, so "Abrindo a Steam" is true.
+        if game.steamAppID != nil {
+            let appeared = await waitFor(SteamProcess.client, timeout: LaunchTimeout.steam)
+            if Task.isCancelled { return }
+            guard appeared else {
+                finishLaunch(.failed("A Steam não abriu. Veja o log em Ajustes."))
+                return
+            }
+            launchPhase = .waitingForGame
+        }
+
+        guard let process = game.processName else {
+            // Nothing to watch for — assume it is up.
+            finishLaunch(.running)
+            return
+        }
+        let gameUp = await waitFor(process, timeout: LaunchTimeout.game)
+        if Task.isCancelled { return }
+        finishLaunch(gameUp
+            ? .running
+            : .failed("O jogo não abriu no tempo esperado. Veja o log em Ajustes."))
+    }
+
+    /// Poll `ProcessDetection` until `name` shows up or `timeout` elapses.
+    private func waitFor(_ name: String, timeout: TimeInterval) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !Task.isCancelled, Date() < deadline {
+            let running = await Task.detached { ProcessDetection.isRunning(name) }.value
+            if running { return true }
+            try? await Task.sleep(nanoseconds: LaunchTimeout.pollNanoseconds)
+        }
+        return false
+    }
+
+    /// Land on a terminal phase. Success clears itself; failure waits for the
+    /// user to dismiss it.
+    private func finishLaunch(_ phase: LaunchPhase) {
+        launchPhase = phase
+        guard phase == .running else { return }
+        Task {
+            try? await Task.sleep(nanoseconds: LaunchTimeout.successLinger)
+            if self.launchPhase == .running { self.dismissLaunch() }
+        }
+    }
+
+    /// Clear the launch overlay and stop watching.
+    func dismissLaunch() {
+        launchWatch?.cancel()
+        launchWatch = nil
+        launchPhase = .idle
+        launchingGame = nil
     }
 
     func openBottleFolder(_ game: Game) {

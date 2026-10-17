@@ -418,6 +418,22 @@ do {
     check(!inst.isInstalled, "a bogus support dir has no Wine")
 }
 
+print("ProcessDetection / launch targets:")
+do {
+    // launchd is always running on macOS — a reliable positive control.
+    check(ProcessDetection.isRunning("launchd"), "detects a process that is running")
+    check(!ProcessDetection.isRunning("macstrike-no-such-process-xyz"),
+          "reports a bogus process name as not running")
+
+    check(GameCatalog.cs2.processName == "cs2.exe", "cs2 launch target is cs2.exe")
+    check(GameCatalog.gtaV.processName == "GTA5.exe", "GTA V launch target is GTA5.exe")
+
+    let custom = Game.custom(name: "Thing", exePath: "/games/Thing/thing.exe")
+    check(custom.processName == "thing.exe", "a custom game watches its own exe name")
+
+    check(SteamProcess.client == "steam.exe", "the Steam client process name")
+}
+
 print("")
 if failures == 0 {
     print("All checks passed.")

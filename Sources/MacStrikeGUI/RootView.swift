@@ -35,6 +35,12 @@ struct RootView: View {
         }
         .background(Theme.backgroundWash.ignoresSafeArea())
         .foregroundStyle(Theme.textPrimary)
+        .overlay {
+            if let game = model.launchingGame, model.launchPhase != .idle {
+                LaunchOverlay(game: game)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: model.launchPhase)
         .alert("Erro", isPresented: .constant(model.lastError != nil)) {
             Button("OK") { model.lastError = nil }
         } message: {

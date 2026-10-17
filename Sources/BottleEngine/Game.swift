@@ -24,6 +24,9 @@ public struct Game: Identifiable, Sendable, Equatable {
     public let supported: Bool
     /// Absolute path to the executable, for custom (non-Steam) games.
     public let exePath: String?
+    /// The Windows process to watch for when launching, e.g. "cs2.exe".
+    /// Lets the GUI report "waiting for the game" honestly instead of guessing.
+    public let processName: String?
 
     public init(
         id: String,
@@ -34,7 +37,8 @@ public struct Game: Identifiable, Sendable, Equatable {
         accentFrom: String,
         accentTo: String,
         supported: Bool = true,
-        exePath: String? = nil
+        exePath: String? = nil,
+        processName: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -45,6 +49,7 @@ public struct Game: Identifiable, Sendable, Equatable {
         self.accentTo = accentTo
         self.supported = supported
         self.exePath = exePath
+        self.processName = processName
     }
 
     /// A user-added game backed by a bare `.exe`. Runs in a shared "Custom" bottle.
@@ -55,7 +60,8 @@ public struct Game: Identifiable, Sendable, Equatable {
              steamAppID: nil,
              accentFrom: "#3A3F55",
              accentTo: "#22263A",
-             exePath: exePath)
+             exePath: exePath,
+             processName: URL(fileURLWithPath: exePath).lastPathComponent)
     }
 }
 
@@ -67,7 +73,8 @@ public enum GameCatalog {
         bottleName: "CS2",
         steamAppID: SteamApp.cs2,
         accentFrom: "#243B6B",
-        accentTo: "#14203A")
+        accentTo: "#14203A",
+        processName: "cs2.exe")
 
     /// Placeholder — not supported yet, shown as "em breve".
     public static let gtaV = Game(
@@ -77,7 +84,8 @@ public enum GameCatalog {
         steamAppID: SteamApp.gtaV,
         accentFrom: "#6B5A24",
         accentTo: "#3F3016",
-        supported: false)
+        supported: false,
+        processName: "GTA5.exe")
 
     public static let builtins: [Game] = [cs2, gtaV]
 
