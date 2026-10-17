@@ -113,7 +113,7 @@ final class SetupRunner: ObservableObject {
             let bottle = model.bottle(for: game)
             let wineUsable = model.wine.isUsable
             try await run { emit in
-                emit("Criando bottle “\(bottle.name)”…")
+                emit("Creating bottle “\(bottle.name)”…")
                 _ = try mgr.createBottle(bottle, runWineboot: wineUsable)
             }
             return true
@@ -122,7 +122,7 @@ final class SetupRunner: ObservableObject {
             let installer = model.dxmtInstaller
             try await run { emit in
                 let r = try installer.install { emit($0) }
-                emit("DXMT \(r.tag) pronto.")
+                emit("DXMT \(r.tag) ready.")
             }
             return true
 
@@ -136,13 +136,13 @@ final class SetupRunner: ObservableObject {
                 switch b.graphicsBackend {
                 case .d3dmetal: sources.d3dmetal = dir
                 case .dxvk:     sources.dxvk = dir
-                case .wined3d:  emit("wined3d: nada a instalar"); return
+                case .wined3d:  emit("wined3d: nothing to install"); return
                 }
                 let installed = try DLLInstaller(sources: sources)
                     .install(b.graphicsBackend, into: b)
                 b.installedGraphicsDLLs = installed
                 try mgr.save(b)
-                emit("Instalado: \(installed.joined(separator: ", "))")
+                emit("Installed: \(installed.joined(separator: ", "))")
             }
             return true
 
@@ -150,12 +150,12 @@ final class SetupRunner: ObservableObject {
             let steam = model.steam
             let bottle = model.bottle(for: game)
             try await run { emit in
-                emit("Baixando SteamSetup.exe…")
+                emit("Downloading SteamSetup.exe…")
                 let p = try steam.install(into: bottle, silent: true)
                 p.waitUntilExit()
                 emit(SteamProvisioner.isInstalled(in: bottle)
-                     ? "Steam instalada."
-                     : "Instalador saiu com \(p.terminationStatus)")
+                     ? "Steam installed."
+                     : "Installer exited \(p.terminationStatus)")
             }
             return true
 
@@ -164,11 +164,11 @@ final class SetupRunner: ObservableObject {
             let steam = model.steam
             let bottle = model.bottle(for: game)
             try await run { emit in
-                emit("Abrindo a Steam para instalar o jogo…")
+                emit("Opening Steam to install the game…")
                 _ = try steam.play(appID: appID, in: bottle)
             }
             phase = .waitingForSteam
-            emit("Aguardando a instalação pela Steam…")
+            emit("Waiting for the Steam install to finish…")
             await pollForGame(appID: appID, in: bottle)
             return false
 
@@ -182,7 +182,7 @@ final class SetupRunner: ObservableObject {
         let deadline = Date().addingTimeInterval(4 * 60 * 60)
         while !Task.isCancelled, Date() < deadline {
             if GameDetection.isInstalled(appID: appID, in: bottle) {
-                emit("✓ Jogo detectado.")
+                emit("✓ Game detected.")
                 model.refreshAll()
                 refresh()
                 if currentStep == .ready { phase = .done } else { start() }

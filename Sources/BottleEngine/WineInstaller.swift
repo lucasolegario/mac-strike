@@ -28,10 +28,10 @@ public struct WineInstaller: Sendable {
         case badArchive(String)
         public var description: String {
             switch self {
-            case .network(let m):          return "Erro de rede: \(m)"
-            case .noAsset:                 return "Nenhum .tar.xz encontrado na última release do Wine"
-            case .extractionFailed(let m): return "Falha ao extrair o Wine: \(m)"
-            case .badArchive(let m):       return "Layout inesperado no arquivo do Wine: \(m)"
+            case .network(let m):          return "Network error: \(m)"
+            case .noAsset:                 return "No .tar.xz asset found in the latest Wine release"
+            case .extractionFailed(let m): return "Failed to extract Wine archive: \(m)"
+            case .badArchive(let m):       return "Unexpected Wine archive layout: \(m)"
             }
         }
     }
@@ -51,7 +51,7 @@ public struct WineInstaller: Sendable {
     ) throws -> (tag: String, url: URL) {
         guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let assets = obj["assets"] as? [[String: Any]] else {
-            throw WineError.badArchive("release JSON sem assets")
+            throw WineError.badArchive("release JSON missing assets")
         }
         let tag = (obj["tag_name"] as? String) ?? "latest"
         let tarballs: [String] = assets
@@ -68,7 +68,7 @@ public struct WineInstaller: Sendable {
         let fm = FileManager.default
         guard let walker = fm.enumerator(at: extractedRoot,
                                          includingPropertiesForKeys: nil) else {
-            throw WineError.badArchive("não consegui percorrer o arquivo extraído")
+            throw WineError.badArchive("could not walk the extracted archive")
         }
         for case let url as URL in walker {
             // Looking for <something>/bin/wine
@@ -77,7 +77,7 @@ public struct WineInstaller: Sendable {
             guard parent.lastPathComponent == "bin" else { continue }
             return parent.deletingLastPathComponent()
         }
-        throw WineError.badArchive("não encontrei bin/wine no arquivo extraído")
+        throw WineError.badArchive("no bin/wine found in the extracted archive")
     }
 
     // MARK: - Network / fs steps
@@ -98,7 +98,7 @@ public struct WineInstaller: Sendable {
         }
         task.resume(); sem.wait()
         if let err { throw WineError.network(err) }
-        guard let data else { throw WineError.network("resposta vazia") }
+        guard let data else { throw WineError.network("empty response") }
         return try Self.pickAsset(fromReleaseJSON: data, channel: channel)
     }
 
@@ -119,7 +119,7 @@ public struct WineInstaller: Sendable {
         }
         task.resume(); sem.wait()
         if let err { throw WineError.network(err) }
-        guard let tmp else { throw WineError.network("nenhum arquivo retornado") }
+        guard let tmp else { throw WineError.network("no file returned") }
         try? FileManager.default.removeItem(at: dst)
         try FileManager.default.moveItem(at: tmp, to: dst)
     }
@@ -131,7 +131,7 @@ public struct WineInstaller: Sendable {
         p.arguments = ["-xJf", tarball.path, "-C", dir.path]   // -J = xz
         try p.run(); p.waitUntilExit()
         if p.terminationStatus != 0 {
-            throw WineError.extractionFailed("tar saiu com \(p.terminationStatus)")
+            throw WineError.extractionFailed("tar exited \(p.terminationStatus)")
         }
     }
 
@@ -148,25 +148,25 @@ public struct WineInstaller: Sendable {
     public func install(progress: (@Sendable (String) -> Void)? = nil) throws -> Result {
         let fm = FileManager.default
         if isInstalled {
-            progress?("Wine já instalado — nada a fazer.")
-            return Result(tag: "existente", root: wineRoot)
+            progress?("Wine already installed — nothing to do.")
+            return Result(tag: "existing", root: wineRoot)
         }
 
-        progress?("Consultando a última release do Wine…")
+        progress?("Querying latest Wine release…")
         let (tag, assetURL) = try fetchLatestAsset()
 
         let downloads = supportDir.appendingPathComponent("downloads")
         let tarball = downloads.appendingPathComponent("wine-\(tag).tar.xz")
-        progress?("Baixando \(assetURL.lastPathComponent) (~190 MB)…")
+        progress?("Downloading \(assetURL.lastPathComponent) (~190 MB)…")
         try download(assetURL, to: tarball)
 
         let staging = downloads.appendingPathComponent("wine-\(tag)-extracted")
         try? fm.removeItem(at: staging)
-        progress?("Extraindo…")
+        progress?("Extracting…")
         try extract(tarball, into: staging)
 
         let source = try Self.wineSourceDir(in: staging)
-        progress?("Instalando em \(wineRoot.lastPathComponent)…")
+        progress?("Installing into \(wineRoot.lastPathComponent)…")
         try? fm.removeItem(at: wineRoot)
         try fm.createDirectory(at: wineRoot, withIntermediateDirectories: true)
         // Copy the tree's *contents* so wineRoot ends up with bin/, lib/, …
@@ -176,9 +176,9 @@ public struct WineInstaller: Sendable {
         try? fm.removeItem(at: staging)
 
         guard isInstalled else {
-            throw WineError.badArchive("instalação terminou sem bin/wine utilizável")
+            throw WineError.badArchive("install finished without a usable bin/wine")
         }
-        progress?("Wine \(tag) pronto.")
+        progress?("Wine \(tag) ready.")
         return Result(tag: tag, root: wineRoot)
     }
 }
