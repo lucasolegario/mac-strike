@@ -1,15 +1,12 @@
 import SwiftUI
 import BottleEngine
 
-// Temporary placeholders — replaced by Tasks 9, 10 and 11.
+// Temporary placeholders — replaced by Tasks 10 and 11.
 // Delete each one as its real view lands.
 
-struct GameDetailView: View {
+struct SetupWizardView: View {
     let game: Game
-    var onBack: () -> Void
-    var body: some View {
-        VStack { Text(game.name); Button("Voltar", action: onBack) }
-    }
+    var body: some View { Text("Wizard: \(game.name)") }
 }
 
 struct SettingsView: View {
