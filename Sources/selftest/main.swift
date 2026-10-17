@@ -15,12 +15,17 @@ var failures = 0
 }
 
 let wine = WineInstallation(root: URL(fileURLWithPath: "/opt/gamebottle/wine"))
-func bottle(_ backend: GraphicsBackend, sync: Bool = true) -> Bottle {
+func bottle(_ backend: GraphicsBackend, sync: Bool = true,
+            policy: DllOverridePolicy = .prefixWide) -> Bottle {
+    // These launch-environment tests are about WINEDLLOVERRIDES, so they ask for
+    // the prefix-wide policy explicitly. Per-application is the product default
+    // and is covered in its own section below.
     Bottle(name: "test",
            prefixPath: URL(fileURLWithPath: "/tmp/bottles/test"),
            architecture: .win64,
            graphicsBackend: backend,
-           synchronizationEnabled: sync)
+           synchronizationEnabled: sync,
+           overridePolicy: policy)
 }
 
 print("LaunchEnvironment recipe:")
@@ -29,7 +34,7 @@ do {
     check(env["WINEPREFIX"] == "/tmp/bottles/test", "WINEPREFIX is set")
     let ov = env["WINEDLLOVERRIDES"] ?? ""
     check(ov.contains("d3d11=n,b") && ov.contains("d3d12=n,b") && ov.contains("dxgi=n,b"),
-          "d3dmetal overrides d3d11/d3d12/dxgi")
+          "d3dmetal overrides d3d11/d3d12/dxgi (prefix-wide policy)")
     check(env["WINEMSYNC"] == "1", "sync maps to WINEMSYNC=1")
     check(env["ROSETTA_ADVERTISE_AVX"] == "1", "advertises AVX under Rosetta")
     check(env["DOTNET_EnableWriteXorExecute"] == "0", ".NET W^X fixup")
@@ -39,7 +44,7 @@ do {
 do {
     let env = LaunchEnvironment.make(for: bottle(.dxvk), wine: wine)
     let ov = env["WINEDLLOVERRIDES"] ?? ""
-    check(ov.contains("d3d11=n,b") && ov.contains("dxgi=n,b"), "dxvk overrides d3d/dxgi")
+    check(ov.contains("d3d11=n,b") && ov.contains("dxgi=n,b"), "dxvk overrides d3d/dxgi (prefix-wide policy)")
 }
 do {
     let env = LaunchEnvironment.make(for: bottle(.wined3d), wine: wine)
@@ -113,7 +118,8 @@ do {
     b.installedGraphicsDLLs = ["d3d10core", "d3d11", "dxgi", "winemetal"]
     let env = LaunchEnvironment.make(for: b, wine: wine)
     let ov = env["WINEDLLOVERRIDES"] ?? ""
-    check(ov.contains("winemetal=n,b") && ov.contains("d3d10core=n,b"), "overrides use installed DXMT DLLs")
+    check(ov.contains("winemetal=n,b") && ov.contains("d3d10core=n,b"),
+          "overrides use installed DXMT DLLs (prefix-wide policy)")
     check(!ov.contains("d3d12"), "no d3d12 override when DXMT installed")
 }
 
@@ -432,6 +438,92 @@ do {
     check(custom.processName == "thing.exe", "a custom game watches its own exe name")
 
     check(SteamProcess.client == "steam.exe", "the Steam client process name")
+}
+
+print("Per-application DLL overrides:")
+do {
+    // Graphics translation DLLs must apply to the GAME only. Imposing them on the
+    // whole prefix makes the Steam client load a translation d3d11/dxgi it never
+    // asked for, and its CEF UI process dies — a black Steam window.
+    let dlls = ["d3d11", "dxgi", "winemetal"]
+
+    let reg = DllOverridePolicy.registryScript(for: "cs2.exe", dlls: dlls) ?? ""
+    check(reg.contains(#"[Software\\Wine\\AppDefaults\\cs2.exe\\DllOverrides]"#),
+          "writes under AppDefaults for the target exe")
+    check(reg.contains("\"d3d11\"=\"native,builtin\""), "d3d11 is native-first for the game")
+    check(reg.contains("\"dxgi\"=\"native,builtin\""), "dxgi is native-first for the game")
+    check(reg.hasPrefix("REGEDIT4"), "is a valid .reg script")
+
+    // A game with no translation DLLs installed yields no script.
+    check(DllOverridePolicy.registryScript(for: "cs2.exe", dlls: []) == nil,
+          "no DLLs means no registry script")
+
+    // The launch environment must NOT carry graphics overrides when the policy
+    // is per-app: that is the whole point.
+    let b = Bottle(name: "CS2", prefixPath: URL(fileURLWithPath: "/tmp/b/CS2"),
+                   graphicsBackend: .d3dmetal,
+                   overridePolicy: .perApplication,
+                   installedGraphicsDLLs: dlls)
+    let env = LaunchEnvironment.make(for: b, wine: WineInstallation(root: URL(fileURLWithPath: "/opt/w")))
+    check(env["WINEDLLOVERRIDES"] == nil,
+          "per-app policy keeps graphics DLLs out of WINEDLLOVERRIDES")
+
+    // The legacy prefix-wide policy still works, for bottles that want it.
+    var wide = b
+    wide.overridePolicy = .prefixWide
+    let envWide = LaunchEnvironment.make(for: wide, wine: WineInstallation(root: URL(fileURLWithPath: "/opt/w")))
+    check((envWide["WINEDLLOVERRIDES"] ?? "").contains("d3d11=n,b"),
+          "prefix-wide policy still emits WINEDLLOVERRIDES")
+
+    // Overlay blocking is a launch-time concern and stays in the environment.
+    var overlay = b
+    overlay.disableSteamOverlay = true
+    let envOverlay = LaunchEnvironment.make(for: overlay, wine: WineInstallation(root: URL(fileURLWithPath: "/opt/w")))
+    check((envOverlay["WINEDLLOVERRIDES"] ?? "").contains("gameoverlayrenderer="),
+          "overlay blocking still applies under the per-app policy")
+    check(!(envOverlay["WINEDLLOVERRIDES"] ?? "").contains("d3d11"),
+          "...without dragging the graphics DLLs back in")
+
+    check(Bottle(name: "x", prefixPath: URL(fileURLWithPath: "/t")).overridePolicy == .perApplication,
+          "new bottles default to the per-app policy")
+}
+
+print("GStreamer dependency:")
+do {
+    // Wine's mfplat needs GStreamer with an H.264 decoder. Without it, the Steam
+    // client's CEF helper takes an access violation and dies — a black window.
+    // Verified on 2026-10-16: installing GStreamer 1.28.8 provides avdec_h264.
+    check(GStreamerDependency.frameworkPath.path == "/Library/Frameworks/GStreamer.framework",
+          "looks for the framework in /Library/Frameworks")
+    check(GStreamerDependency.inspectTool.lastPathComponent == "gst-inspect-1.0",
+          "uses gst-inspect-1.0 to probe plugins")
+
+    // Stable releases have an even minor version; 1.29.x is a dev series.
+    check(GStreamerDependency.isStableVersion("1.28.8"), "1.28.8 is stable")
+    check(!GStreamerDependency.isStableVersion("1.29.2"), "1.29.2 (odd minor) is not stable")
+    check(!GStreamerDependency.isStableVersion("nonsense"), "garbage is not a stable version")
+
+    let url = GStreamerDependency.packageURL(version: "1.28.8")
+    check(url.absoluteString
+            == "https://gstreamer.freedesktop.org/data/pkg/osx/1.28.8/gstreamer-1.0-1.28.8-universal.pkg",
+          "builds the official universal package URL")
+    check(url.host == "gstreamer.freedesktop.org", "downloads only from the official host")
+
+    // Parsing the directory index picks the newest STABLE version.
+    let index = """
+    <a href="1.26.0/">1.26.0/</a> <a href="1.28.7/">1.28.7/</a>
+    <a href="1.28.8/">1.28.8/</a> <a href="1.29.2/">1.29.2/</a>
+    """
+    check(GStreamerDependency.latestStableVersion(fromIndex: index) == "1.28.8",
+          "picks the newest stable, skipping the 1.29 dev series")
+    check(GStreamerDependency.latestStableVersion(fromIndex: "no versions here") == nil,
+          "an index with no versions yields nil")
+
+    // The privileged install must go through macOS's own auth dialog.
+    let script = GStreamerDependency.installAppleScript(pkgPath: "/tmp/g.pkg")
+    check(script.contains("with administrator privileges"),
+          "asks for rights via the native macOS prompt")
+    check(script.contains("/tmp/g.pkg"), "installs the downloaded package")
 }
 
 print("")
