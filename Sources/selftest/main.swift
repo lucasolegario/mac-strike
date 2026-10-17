@@ -378,6 +378,46 @@ do {
     try? fm.removeItem(at: URL(fileURLWithPath: "/tmp/bottles/CS2"))
 }
 
+print("WineInstaller asset picking:")
+do {
+    let json = """
+    {"tag_name":"wine-staging-11.18",
+     "assets":[
+       {"name":"wine-devel-11.18-osx64.tar.xz",
+        "browser_download_url":"https://example.com/wine-devel-11.18-osx64.tar.xz"},
+       {"name":"wine-staging-11.18-osx64.tar.xz",
+        "browser_download_url":"https://example.com/wine-staging-11.18-osx64.tar.xz"},
+       {"name":"README.md",
+        "browser_download_url":"https://example.com/README.md"}
+     ]}
+    """.data(using: .utf8)!
+
+    let staging = try WineInstaller.pickAsset(fromReleaseJSON: json, channel: "staging")
+    check(staging.tag == "wine-staging-11.18", "reads the release tag")
+    check(staging.url.lastPathComponent == "wine-staging-11.18-osx64.tar.xz",
+          "staging channel picks the staging tarball")
+
+    let devel = try WineInstaller.pickAsset(fromReleaseJSON: json, channel: "devel")
+    check(devel.url.lastPathComponent == "wine-devel-11.18-osx64.tar.xz",
+          "devel channel picks the devel tarball")
+
+    // No channel match -> falls back to the first .tar.xz, never the README.
+    let other = try WineInstaller.pickAsset(fromReleaseJSON: json, channel: "nope")
+    check(other.url.pathExtension == "xz", "falls back to a tarball, not a stray asset")
+
+    // No tarballs at all -> throws.
+    let empty = #"{"tag_name":"x","assets":[{"name":"a.txt","browser_download_url":"https://e/a.txt"}]}"#
+        .data(using: .utf8)!
+    var threw = false
+    do { _ = try WineInstaller.pickAsset(fromReleaseJSON: empty, channel: "staging") }
+    catch { threw = true }
+    check(threw, "no .tar.xz asset throws")
+
+    let inst = WineInstaller(supportDir: URL(fileURLWithPath: "/tmp/ms-support"))
+    check(inst.wineRoot.path == "/tmp/ms-support/wine", "installs into <support>/wine")
+    check(!inst.isInstalled, "a bogus support dir has no Wine")
+}
+
 print("")
 if failures == 0 {
     print("All checks passed.")
