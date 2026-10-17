@@ -526,6 +526,46 @@ do {
     check(script.contains("/tmp/g.pkg"), "installs the downloaded package")
 }
 
+print("H.264 decoder preference (learned from CrossOver's media stack):")
+do {
+    // CrossOver ships a minimal 18-plugin GStreamer whose H.264 decoding comes
+    // from applemedia (VideoToolbox) — hardware decode. Software decoders work
+    // too, but cost CPU, which under Wine means heat and audio underruns.
+    check(GStreamerDependency.H264Decoder.videoToolbox.isHardware,
+          "VideoToolbox is the hardware path")
+    check(!GStreamerDependency.H264Decoder.libav.isHardware, "libav is software")
+    check(!GStreamerDependency.H264Decoder.openH264.isHardware, "openH264 is software")
+
+    // Hardware first: that is what CrossOver relies on and what keeps the Mac cool.
+    check(GStreamerDependency.H264Decoder.preferenceOrder.first == .videoToolbox,
+          "VideoToolbox is preferred over the software decoders")
+    check(GStreamerDependency.H264Decoder.preferenceOrder.count == 3,
+          "all three known decoders are ranked")
+
+    // Element names as gst-inspect reports them.
+    check(GStreamerDependency.H264Decoder.videoToolbox.elementNames.contains("vtdec"),
+          "VideoToolbox is probed as vtdec")
+    check(GStreamerDependency.H264Decoder.libav.elementNames.contains("avdec_h264"),
+          "libav is probed as avdec_h264")
+
+    // Parsing a gst-inspect listing identifies what is available.
+    let listing = """
+    applemedia:  vtdec: Apple VideoToolbox decoder
+    applemedia:  vtdec_hw: Apple VideoToolbox decoder (hardware only)
+    libav:  avdec_h264: libav H.264 decoder
+    """
+    let found = GStreamerDependency.H264Decoder.available(inListing: listing)
+    check(found.contains(.videoToolbox) && found.contains(.libav),
+          "detects both decoders present in the listing")
+    check(!found.contains(.openH264), "does not report a decoder that is absent")
+    check(GStreamerDependency.H264Decoder.best(inListing: listing) == .videoToolbox,
+          "picks the hardware decoder when both exist")
+    check(GStreamerDependency.H264Decoder.best(inListing: "nothing here") == nil,
+          "reports no decoder when none is installed")
+    check(GStreamerDependency.H264Decoder.best(inListing: "libav: avdec_h264: x") == .libav,
+          "falls back to software when hardware is missing")
+}
+
 print("")
 if failures == 0 {
     print("All checks passed.")

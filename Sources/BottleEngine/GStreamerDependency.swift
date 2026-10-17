@@ -36,6 +36,50 @@ public enum GStreamerDependency {
         FileManager.default.fileExists(atPath: frameworkPath.path)
     }
 
+    /// The H.264 decoders Wine's `winegstreamer` can use, ranked.
+    ///
+    /// Ranking matters: decoding in software burns CPU, and under Wine that
+    /// shows up as heat and as audio underruns in games. macOS can decode H.264
+    /// on the GPU through VideoToolbox, so that path comes first.
+    public enum H264Decoder: String, CaseIterable, Sendable {
+        /// Apple VideoToolbox — hardware decode, via GStreamer's `applemedia`.
+        case videoToolbox
+        /// libav/FFmpeg software decoder.
+        case libav
+        /// Cisco OpenH264 software decoder.
+        case openH264
+
+        /// Does this decoder run on the GPU?
+        public var isHardware: Bool { self == .videoToolbox }
+
+        /// Element names as `gst-inspect-1.0` lists them.
+        public var elementNames: [String] {
+            switch self {
+            case .videoToolbox: return ["vtdec", "vtdec_hw"]
+            case .libav:        return ["avdec_h264"]
+            case .openH264:     return ["openh264dec"]
+            }
+        }
+
+        /// Best first. Hardware decode beats software.
+        public static var preferenceOrder: [H264Decoder] {
+            [.videoToolbox, .libav, .openH264]
+        }
+
+        /// Which decoders appear in a `gst-inspect-1.0` listing.
+        public static func available(inListing listing: String) -> [H264Decoder] {
+            allCases.filter { decoder in
+                decoder.elementNames.contains { listing.contains($0) }
+            }
+        }
+
+        /// The best decoder present in a listing, or nil if none is.
+        public static func best(inListing listing: String) -> H264Decoder? {
+            let present = available(inListing: listing)
+            return preferenceOrder.first { present.contains($0) }
+        }
+    }
+
     // MARK: - Pure helpers (unit-tested)
 
     /// GStreamer uses even minor versions for stable releases: 1.28.x is stable,
@@ -83,25 +127,31 @@ public enum GStreamerDependency {
 
     // MARK: - Probing
 
-    /// Does the installed GStreamer actually provide an H.264 decoder?
-    ///
-    /// Presence of the framework is not enough — the decoder lives in the
-    /// "restricted"/libav plugin set.
-    public static func hasH264Decoder() -> Bool {
+    /// The plugin listing from `gst-inspect-1.0`, or nil if it cannot run.
+    static func pluginListing() -> String? {
         guard isInstalled,
-              FileManager.default.isExecutableFile(atPath: inspectTool.path) else { return false }
+              FileManager.default.isExecutableFile(atPath: inspectTool.path) else { return nil }
         let p = Process()
         p.executableURL = inspectTool
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = FileHandle.nullDevice
-        do { try p.run() } catch { return false }
+        do { try p.run() } catch { return nil }
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
-        let listing = String(decoding: data, as: UTF8.self)
-        return listing.contains("avdec_h264") || listing.contains("openh264dec")
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// The best H.264 decoder actually installed, or nil if there is none.
+    ///
+    /// Presence of the framework is not enough: a GStreamer without any H.264
+    /// decoder still leaves Wine's `mfplat` unable to create one, which is what
+    /// crashes the Steam client.
+    public static func installedH264Decoder() -> H264Decoder? {
+        guard let listing = pluginListing() else { return nil }
+        return H264Decoder.best(inListing: listing)
     }
 
     /// Everything needed for Wine to decode the video the Steam client plays.
-    public static var isSatisfied: Bool { hasH264Decoder() }
+    public static var isSatisfied: Bool { installedH264Decoder() != nil }
 }
