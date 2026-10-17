@@ -305,6 +305,56 @@ do {
     check(custom.exePath == "/tmp/x/game.exe", "custom game remembers its exe")
 }
 
+print("SetupPlan (pure):")
+do {
+    let cs2 = GameCatalog.cs2
+    let steps = SetupPlan.steps(for: cs2)
+    check(steps == [.installWine, .createBottle, .fetchDXMT,
+                    .installGraphics, .installSteam, .installGame(appID: 730)],
+          "cs2 step order: wine -> bottle -> dxmt -> graphics -> steam -> game")
+
+    // Wine must come before the bottle: wineboot needs a usable Wine.
+    check(steps.firstIndex(of: .installWine)! < steps.firstIndex(of: .createBottle)!,
+          "Wine is installed before the bottle is created")
+
+    let custom = Game.custom(name: "X", exePath: "/tmp/x.exe")
+    check(SetupPlan.steps(for: custom) == [.installWine, .createBottle, .fetchDXMT, .installGraphics],
+          "a custom game skips the Steam steps")
+
+    // Nothing done yet -> first step.
+    var st = SetupState()
+    check(SetupPlan.next(for: cs2, given: st) == .installWine, "empty state starts at installWine")
+    check(SetupPlan.progress(for: cs2, given: st) == 0, "empty state is 0% progress")
+
+    // Satisfied steps are skipped.
+    st.wineReady = true
+    check(SetupPlan.next(for: cs2, given: st) == .createBottle, "wine ready -> createBottle")
+    st.bottleExists = true
+    check(SetupPlan.next(for: cs2, given: st) == .fetchDXMT, "bottle exists -> fetchDXMT")
+    st.dxmtDownloaded = true
+    check(SetupPlan.next(for: cs2, given: st) == .installGraphics, "dxmt ready -> installGraphics")
+    st.graphicsInstalled = true
+    check(SetupPlan.next(for: cs2, given: st) == .installSteam, "graphics ready -> installSteam")
+    st.steamInstalled = true
+    check(SetupPlan.next(for: cs2, given: st) == .installGame(appID: 730), "steam ready -> installGame")
+
+    // Mid-way progress is a real fraction.
+    let mid = SetupPlan.progress(for: cs2, given: st)
+    check(mid > 0.8 && mid < 1.0, "five of six steps done is between 80% and 100%")
+
+    // Everything done -> ready.
+    st.gameInstalled = true
+    check(SetupPlan.next(for: cs2, given: st) == .ready, "all satisfied -> ready")
+    check(SetupPlan.progress(for: cs2, given: st) == 1.0, "all satisfied -> 100%")
+
+    // Out-of-order satisfaction still returns the earliest missing step.
+    var holes = SetupState()
+    holes.wineReady = true
+    holes.steamInstalled = true
+    check(SetupPlan.next(for: cs2, given: holes) == .createBottle,
+          "later steps done out of order still reports the earliest gap")
+}
+
 print("")
 if failures == 0 {
     print("All checks passed.")
