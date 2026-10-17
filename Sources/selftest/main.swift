@@ -285,6 +285,26 @@ do {
     try? fm.removeItem(at: dir)
 }
 
+print("Game catalog:")
+do {
+    let cs2 = GameCatalog.cs2
+    check(cs2.id == "cs2", "cs2 slug")
+    check(cs2.name == "Counter-Strike 2", "cs2 display name")
+    check(cs2.bottleName == "CS2", "cs2 adopts the existing CS2 bottle name")
+    check(cs2.steamAppID == SteamApp.cs2, "cs2 maps to Steam app 730")
+    check(cs2.backend == .d3dmetal, "cs2 defaults to d3dmetal")
+    check(cs2.supported, "cs2 is supported")
+    check(!GameCatalog.gtaV.supported, "GTA V ships as an unsupported placeholder")
+    check(GameCatalog.builtins.count == 2, "two built-in games")
+    check(GameCatalog.game(id: "cs2") == cs2, "lookup by slug finds cs2")
+    check(GameCatalog.game(id: "nope") == nil, "unknown slug returns nil")
+
+    let custom = Game.custom(name: "Meu jogo", exePath: "/tmp/x/game.exe")
+    check(custom.steamAppID == nil, "custom game has no Steam app id")
+    check(custom.id.hasPrefix("custom:"), "custom game id is namespaced")
+    check(custom.exePath == "/tmp/x/game.exe", "custom game remembers its exe")
+}
+
 print("")
 if failures == 0 {
     print("All checks passed.")
