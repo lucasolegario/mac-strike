@@ -15,12 +15,17 @@ var failures = 0
 }
 
 let wine = WineInstallation(root: URL(fileURLWithPath: "/opt/gamebottle/wine"))
-func bottle(_ backend: GraphicsBackend, sync: Bool = true) -> Bottle {
+func bottle(_ backend: GraphicsBackend, sync: Bool = true,
+            policy: DllOverridePolicy = .prefixWide) -> Bottle {
+    // These launch-environment tests are about WINEDLLOVERRIDES, so they ask for
+    // the prefix-wide policy explicitly. Per-application is the product default
+    // and is covered in its own section below.
     Bottle(name: "test",
            prefixPath: URL(fileURLWithPath: "/tmp/bottles/test"),
            architecture: .win64,
            graphicsBackend: backend,
-           synchronizationEnabled: sync)
+           synchronizationEnabled: sync,
+           overridePolicy: policy)
 }
 
 print("LaunchEnvironment recipe:")
@@ -29,7 +34,7 @@ do {
     check(env["WINEPREFIX"] == "/tmp/bottles/test", "WINEPREFIX is set")
     let ov = env["WINEDLLOVERRIDES"] ?? ""
     check(ov.contains("d3d11=n,b") && ov.contains("d3d12=n,b") && ov.contains("dxgi=n,b"),
-          "d3dmetal overrides d3d11/d3d12/dxgi")
+          "d3dmetal overrides d3d11/d3d12/dxgi (prefix-wide policy)")
     check(env["WINEMSYNC"] == "1", "sync maps to WINEMSYNC=1")
     check(env["ROSETTA_ADVERTISE_AVX"] == "1", "advertises AVX under Rosetta")
     check(env["DOTNET_EnableWriteXorExecute"] == "0", ".NET W^X fixup")
@@ -39,7 +44,7 @@ do {
 do {
     let env = LaunchEnvironment.make(for: bottle(.dxvk), wine: wine)
     let ov = env["WINEDLLOVERRIDES"] ?? ""
-    check(ov.contains("d3d11=n,b") && ov.contains("dxgi=n,b"), "dxvk overrides d3d/dxgi")
+    check(ov.contains("d3d11=n,b") && ov.contains("dxgi=n,b"), "dxvk overrides d3d/dxgi (prefix-wide policy)")
 }
 do {
     let env = LaunchEnvironment.make(for: bottle(.wined3d), wine: wine)
@@ -113,7 +118,8 @@ do {
     b.installedGraphicsDLLs = ["d3d10core", "d3d11", "dxgi", "winemetal"]
     let env = LaunchEnvironment.make(for: b, wine: wine)
     let ov = env["WINEDLLOVERRIDES"] ?? ""
-    check(ov.contains("winemetal=n,b") && ov.contains("d3d10core=n,b"), "overrides use installed DXMT DLLs")
+    check(ov.contains("winemetal=n,b") && ov.contains("d3d10core=n,b"),
+          "overrides use installed DXMT DLLs (prefix-wide policy)")
     check(!ov.contains("d3d12"), "no d3d12 override when DXMT installed")
 }
 
@@ -283,6 +289,281 @@ do {
                             storageURL: dir.appendingPathComponent("license2.json"))
     check(m2.entitlement() == .community && m2.entitlement().hasPro, "unconfigured build is community (all open)")
     try? fm.removeItem(at: dir)
+}
+
+print("Game catalog:")
+do {
+    let cs2 = GameCatalog.cs2
+    check(cs2.id == "cs2", "cs2 slug")
+    check(cs2.name == "Counter-Strike 2", "cs2 display name")
+    check(cs2.bottleName == "CS2", "cs2 adopts the existing CS2 bottle name")
+    check(cs2.steamAppID == SteamApp.cs2, "cs2 maps to Steam app 730")
+    check(cs2.backend == .d3dmetal, "cs2 defaults to d3dmetal")
+    check(cs2.supported, "cs2 is supported")
+    check(!GameCatalog.gtaV.supported, "GTA V ships as an unsupported placeholder")
+    check(GameCatalog.builtins.count == 2, "two built-in games")
+    check(GameCatalog.game(id: "cs2") == cs2, "lookup by slug finds cs2")
+    check(GameCatalog.game(id: "nope") == nil, "unknown slug returns nil")
+
+    let custom = Game.custom(name: "Meu jogo", exePath: "/tmp/x/game.exe")
+    check(custom.steamAppID == nil, "custom game has no Steam app id")
+    check(custom.id.hasPrefix("custom:"), "custom game id is namespaced")
+    check(custom.exePath == "/tmp/x/game.exe", "custom game remembers its exe")
+}
+
+print("SetupPlan (pure):")
+do {
+    let cs2 = GameCatalog.cs2
+    let steps = SetupPlan.steps(for: cs2)
+    check(steps == [.installWine, .createBottle, .fetchDXMT,
+                    .installGraphics, .installSteam, .installGame(appID: 730)],
+          "cs2 step order: wine -> bottle -> dxmt -> graphics -> steam -> game")
+
+    // Wine must come before the bottle: wineboot needs a usable Wine.
+    check(steps.firstIndex(of: .installWine)! < steps.firstIndex(of: .createBottle)!,
+          "Wine is installed before the bottle is created")
+
+    let custom = Game.custom(name: "X", exePath: "/tmp/x.exe")
+    check(SetupPlan.steps(for: custom) == [.installWine, .createBottle, .fetchDXMT, .installGraphics],
+          "a custom game skips the Steam steps")
+
+    // Nothing done yet -> first step.
+    var st = SetupState()
+    check(SetupPlan.next(for: cs2, given: st) == .installWine, "empty state starts at installWine")
+    check(SetupPlan.progress(for: cs2, given: st) == 0, "empty state is 0% progress")
+
+    // Satisfied steps are skipped.
+    st.wineReady = true
+    check(SetupPlan.next(for: cs2, given: st) == .createBottle, "wine ready -> createBottle")
+    st.bottleExists = true
+    check(SetupPlan.next(for: cs2, given: st) == .fetchDXMT, "bottle exists -> fetchDXMT")
+    st.dxmtDownloaded = true
+    check(SetupPlan.next(for: cs2, given: st) == .installGraphics, "dxmt ready -> installGraphics")
+    st.graphicsInstalled = true
+    check(SetupPlan.next(for: cs2, given: st) == .installSteam, "graphics ready -> installSteam")
+    st.steamInstalled = true
+    check(SetupPlan.next(for: cs2, given: st) == .installGame(appID: 730), "steam ready -> installGame")
+
+    // Mid-way progress is a real fraction.
+    let mid = SetupPlan.progress(for: cs2, given: st)
+    check(mid > 0.8 && mid < 1.0, "five of six steps done is between 80% and 100%")
+
+    // Everything done -> ready.
+    st.gameInstalled = true
+    check(SetupPlan.next(for: cs2, given: st) == .ready, "all satisfied -> ready")
+    check(SetupPlan.progress(for: cs2, given: st) == 1.0, "all satisfied -> 100%")
+
+    // Out-of-order satisfaction still returns the earliest missing step.
+    var holes = SetupState()
+    holes.wineReady = true
+    holes.steamInstalled = true
+    check(SetupPlan.next(for: cs2, given: holes) == .createBottle,
+          "later steps done out of order still reports the earliest gap")
+}
+
+print("GameDetection:")
+do {
+    let b = Bottle(name: "CS2", prefixPath: URL(fileURLWithPath: "/tmp/bottles/CS2"))
+    check(GameDetection.steamAppsCommon(in: b).path
+            == "/tmp/bottles/CS2/drive_c/Program Files (x86)/Steam/steamapps/common",
+          "steamapps/common path inside the bottle")
+    check(GameDetection.installDir(for: SteamApp.cs2, in: b)?.lastPathComponent
+            == "Counter-Strike Global Offensive",
+          "cs2 install dir name matches Steam's on-disk name")
+    check(GameDetection.installDir(for: 999999, in: b) == nil,
+          "unknown app id has no known install dir")
+    check(!GameDetection.isInstalled(appID: SteamApp.cs2, in: b),
+          "nothing installed under a bogus prefix")
+
+    // Create the directory and it should be detected.
+    let fm = FileManager.default
+    let dir = GameDetection.installDir(for: SteamApp.cs2, in: b)!
+    try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+    check(GameDetection.isInstalled(appID: SteamApp.cs2, in: b),
+          "detects the game once its directory exists")
+    try? fm.removeItem(at: URL(fileURLWithPath: "/tmp/bottles/CS2"))
+}
+
+print("WineInstaller asset picking:")
+do {
+    let json = """
+    {"tag_name":"wine-staging-11.18",
+     "assets":[
+       {"name":"wine-devel-11.18-osx64.tar.xz",
+        "browser_download_url":"https://example.com/wine-devel-11.18-osx64.tar.xz"},
+       {"name":"wine-staging-11.18-osx64.tar.xz",
+        "browser_download_url":"https://example.com/wine-staging-11.18-osx64.tar.xz"},
+       {"name":"README.md",
+        "browser_download_url":"https://example.com/README.md"}
+     ]}
+    """.data(using: .utf8)!
+
+    let staging = try WineInstaller.pickAsset(fromReleaseJSON: json, channel: "staging")
+    check(staging.tag == "wine-staging-11.18", "reads the release tag")
+    check(staging.url.lastPathComponent == "wine-staging-11.18-osx64.tar.xz",
+          "staging channel picks the staging tarball")
+
+    let devel = try WineInstaller.pickAsset(fromReleaseJSON: json, channel: "devel")
+    check(devel.url.lastPathComponent == "wine-devel-11.18-osx64.tar.xz",
+          "devel channel picks the devel tarball")
+
+    // No channel match -> falls back to the first .tar.xz, never the README.
+    let other = try WineInstaller.pickAsset(fromReleaseJSON: json, channel: "nope")
+    check(other.url.pathExtension == "xz", "falls back to a tarball, not a stray asset")
+
+    // No tarballs at all -> throws.
+    let empty = #"{"tag_name":"x","assets":[{"name":"a.txt","browser_download_url":"https://e/a.txt"}]}"#
+        .data(using: .utf8)!
+    var threw = false
+    do { _ = try WineInstaller.pickAsset(fromReleaseJSON: empty, channel: "staging") }
+    catch { threw = true }
+    check(threw, "no .tar.xz asset throws")
+
+    let inst = WineInstaller(supportDir: URL(fileURLWithPath: "/tmp/ms-support"))
+    check(inst.wineRoot.path == "/tmp/ms-support/wine", "installs into <support>/wine")
+    check(!inst.isInstalled, "a bogus support dir has no Wine")
+}
+
+print("ProcessDetection / launch targets:")
+do {
+    // launchd is always running on macOS — a reliable positive control.
+    check(ProcessDetection.isRunning("launchd"), "detects a process that is running")
+    check(!ProcessDetection.isRunning("macstrike-no-such-process-xyz"),
+          "reports a bogus process name as not running")
+
+    check(GameCatalog.cs2.processName == "cs2.exe", "cs2 launch target is cs2.exe")
+    check(GameCatalog.gtaV.processName == "GTA5.exe", "GTA V launch target is GTA5.exe")
+
+    let custom = Game.custom(name: "Thing", exePath: "/games/Thing/thing.exe")
+    check(custom.processName == "thing.exe", "a custom game watches its own exe name")
+
+    check(SteamProcess.client == "steam.exe", "the Steam client process name")
+}
+
+print("Per-application DLL overrides:")
+do {
+    // Graphics translation DLLs must apply to the GAME only. Imposing them on the
+    // whole prefix makes the Steam client load a translation d3d11/dxgi it never
+    // asked for, and its CEF UI process dies — a black Steam window.
+    let dlls = ["d3d11", "dxgi", "winemetal"]
+
+    let reg = DllOverridePolicy.registryScript(for: "cs2.exe", dlls: dlls) ?? ""
+    check(reg.contains(#"[Software\\Wine\\AppDefaults\\cs2.exe\\DllOverrides]"#),
+          "writes under AppDefaults for the target exe")
+    check(reg.contains("\"d3d11\"=\"native,builtin\""), "d3d11 is native-first for the game")
+    check(reg.contains("\"dxgi\"=\"native,builtin\""), "dxgi is native-first for the game")
+    check(reg.hasPrefix("REGEDIT4"), "is a valid .reg script")
+
+    // A game with no translation DLLs installed yields no script.
+    check(DllOverridePolicy.registryScript(for: "cs2.exe", dlls: []) == nil,
+          "no DLLs means no registry script")
+
+    // The launch environment must NOT carry graphics overrides when the policy
+    // is per-app: that is the whole point.
+    let b = Bottle(name: "CS2", prefixPath: URL(fileURLWithPath: "/tmp/b/CS2"),
+                   graphicsBackend: .d3dmetal,
+                   overridePolicy: .perApplication,
+                   installedGraphicsDLLs: dlls)
+    let env = LaunchEnvironment.make(for: b, wine: WineInstallation(root: URL(fileURLWithPath: "/opt/w")))
+    check(env["WINEDLLOVERRIDES"] == nil,
+          "per-app policy keeps graphics DLLs out of WINEDLLOVERRIDES")
+
+    // The legacy prefix-wide policy still works, for bottles that want it.
+    var wide = b
+    wide.overridePolicy = .prefixWide
+    let envWide = LaunchEnvironment.make(for: wide, wine: WineInstallation(root: URL(fileURLWithPath: "/opt/w")))
+    check((envWide["WINEDLLOVERRIDES"] ?? "").contains("d3d11=n,b"),
+          "prefix-wide policy still emits WINEDLLOVERRIDES")
+
+    // Overlay blocking is a launch-time concern and stays in the environment.
+    var overlay = b
+    overlay.disableSteamOverlay = true
+    let envOverlay = LaunchEnvironment.make(for: overlay, wine: WineInstallation(root: URL(fileURLWithPath: "/opt/w")))
+    check((envOverlay["WINEDLLOVERRIDES"] ?? "").contains("gameoverlayrenderer="),
+          "overlay blocking still applies under the per-app policy")
+    check(!(envOverlay["WINEDLLOVERRIDES"] ?? "").contains("d3d11"),
+          "...without dragging the graphics DLLs back in")
+
+    check(Bottle(name: "x", prefixPath: URL(fileURLWithPath: "/t")).overridePolicy == .perApplication,
+          "new bottles default to the per-app policy")
+}
+
+print("GStreamer dependency:")
+do {
+    // Wine's mfplat needs GStreamer with an H.264 decoder. Without it, the Steam
+    // client's CEF helper takes an access violation and dies — a black window.
+    // Verified on 2026-10-16: installing GStreamer 1.28.8 provides avdec_h264.
+    check(GStreamerDependency.frameworkPath.path == "/Library/Frameworks/GStreamer.framework",
+          "looks for the framework in /Library/Frameworks")
+    check(GStreamerDependency.inspectTool.lastPathComponent == "gst-inspect-1.0",
+          "uses gst-inspect-1.0 to probe plugins")
+
+    // Stable releases have an even minor version; 1.29.x is a dev series.
+    check(GStreamerDependency.isStableVersion("1.28.8"), "1.28.8 is stable")
+    check(!GStreamerDependency.isStableVersion("1.29.2"), "1.29.2 (odd minor) is not stable")
+    check(!GStreamerDependency.isStableVersion("nonsense"), "garbage is not a stable version")
+
+    let url = GStreamerDependency.packageURL(version: "1.28.8")
+    check(url.absoluteString
+            == "https://gstreamer.freedesktop.org/data/pkg/osx/1.28.8/gstreamer-1.0-1.28.8-universal.pkg",
+          "builds the official universal package URL")
+    check(url.host == "gstreamer.freedesktop.org", "downloads only from the official host")
+
+    // Parsing the directory index picks the newest STABLE version.
+    let index = """
+    <a href="1.26.0/">1.26.0/</a> <a href="1.28.7/">1.28.7/</a>
+    <a href="1.28.8/">1.28.8/</a> <a href="1.29.2/">1.29.2/</a>
+    """
+    check(GStreamerDependency.latestStableVersion(fromIndex: index) == "1.28.8",
+          "picks the newest stable, skipping the 1.29 dev series")
+    check(GStreamerDependency.latestStableVersion(fromIndex: "no versions here") == nil,
+          "an index with no versions yields nil")
+
+    // The privileged install must go through macOS's own auth dialog.
+    let script = GStreamerDependency.installAppleScript(pkgPath: "/tmp/g.pkg")
+    check(script.contains("with administrator privileges"),
+          "asks for rights via the native macOS prompt")
+    check(script.contains("/tmp/g.pkg"), "installs the downloaded package")
+}
+
+print("H.264 decoder preference (learned from CrossOver's media stack):")
+do {
+    // CrossOver ships a minimal 18-plugin GStreamer whose H.264 decoding comes
+    // from applemedia (VideoToolbox) — hardware decode. Software decoders work
+    // too, but cost CPU, which under Wine means heat and audio underruns.
+    check(GStreamerDependency.H264Decoder.videoToolbox.isHardware,
+          "VideoToolbox is the hardware path")
+    check(!GStreamerDependency.H264Decoder.libav.isHardware, "libav is software")
+    check(!GStreamerDependency.H264Decoder.openH264.isHardware, "openH264 is software")
+
+    // Hardware first: that is what CrossOver relies on and what keeps the Mac cool.
+    check(GStreamerDependency.H264Decoder.preferenceOrder.first == .videoToolbox,
+          "VideoToolbox is preferred over the software decoders")
+    check(GStreamerDependency.H264Decoder.preferenceOrder.count == 3,
+          "all three known decoders are ranked")
+
+    // Element names as gst-inspect reports them.
+    check(GStreamerDependency.H264Decoder.videoToolbox.elementNames.contains("vtdec"),
+          "VideoToolbox is probed as vtdec")
+    check(GStreamerDependency.H264Decoder.libav.elementNames.contains("avdec_h264"),
+          "libav is probed as avdec_h264")
+
+    // Parsing a gst-inspect listing identifies what is available.
+    let listing = """
+    applemedia:  vtdec: Apple VideoToolbox decoder
+    applemedia:  vtdec_hw: Apple VideoToolbox decoder (hardware only)
+    libav:  avdec_h264: libav H.264 decoder
+    """
+    let found = GStreamerDependency.H264Decoder.available(inListing: listing)
+    check(found.contains(.videoToolbox) && found.contains(.libav),
+          "detects both decoders present in the listing")
+    check(!found.contains(.openH264), "does not report a decoder that is absent")
+    check(GStreamerDependency.H264Decoder.best(inListing: listing) == .videoToolbox,
+          "picks the hardware decoder when both exist")
+    check(GStreamerDependency.H264Decoder.best(inListing: "nothing here") == nil,
+          "reports no decoder when none is installed")
+    check(GStreamerDependency.H264Decoder.best(inListing: "libav: avdec_h264: x") == .libav,
+          "falls back to software when hardware is missing")
 }
 
 print("")

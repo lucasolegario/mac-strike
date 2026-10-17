@@ -3,3 +3,4 @@
 MacStrike.xcodeproj/
 *.xcodeproj/xcuserdata/
 dist/
+.superpowers/

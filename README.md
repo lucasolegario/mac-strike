@@ -125,8 +125,9 @@ swift run macstrike steam "$PREFIX" play 730
 
 ## GUI
 
-The SwiftUI app mirrors the whole flow — download DXMT, create a bottle, install
-graphics, install Steam, and play with one click.
+A GUI (`swift run macstrike-gui`) é centrada em jogos: uma biblioteca em grade,
+a tela de cada jogo com um botão Jogar, e um assistente passo-a-passo que baixa
+o Wine, o DXMT e a Steam e detecta quando o jogo terminou de instalar.
 
 ```bash
 # A) from the CLI, no Xcode:

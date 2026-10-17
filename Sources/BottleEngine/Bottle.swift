@@ -28,6 +28,9 @@ public struct Bottle: Codable, Sendable, Identifiable {
     /// winemetal). When set, these drive `WINEDLLOVERRIDES` instead of the
     /// backend's nominal list — DXMT and Apple GPTK ship different DLL sets.
     public var installedGraphicsDLLs: [String]
+    /// How the graphics-translation DLL overrides are applied. Per-application
+    /// by default, so the Steam client is not forced to load them.
+    public var overridePolicy: DllOverridePolicy
     /// Extra user-supplied environment overrides (highest precedence).
     public var extraEnvironment: [String: String]
 
@@ -41,6 +44,7 @@ public struct Bottle: Codable, Sendable, Identifiable {
         synchronizationEnabled: Bool = true,
         performance: PerformanceProfile = .balanced,
         disableSteamOverlay: Bool = false,
+        overridePolicy: DllOverridePolicy = .perApplication,
         installedGraphicsDLLs: [String] = [],
         extraEnvironment: [String: String] = [:]
     ) {
@@ -53,6 +57,7 @@ public struct Bottle: Codable, Sendable, Identifiable {
         self.synchronizationEnabled = synchronizationEnabled
         self.performance = performance
         self.disableSteamOverlay = disableSteamOverlay
+        self.overridePolicy = overridePolicy
         self.installedGraphicsDLLs = installedGraphicsDLLs
         self.extraEnvironment = extraEnvironment
     }
@@ -72,7 +77,7 @@ public struct Bottle: Codable, Sendable, Identifiable {
     enum CodingKeys: String, CodingKey {
         case id, name, prefixPath, architecture, windowsVersion
         case graphicsBackend, synchronizationEnabled, performance
-        case disableSteamOverlay, installedGraphicsDLLs, extraEnvironment
+        case disableSteamOverlay, overridePolicy, installedGraphicsDLLs, extraEnvironment
     }
 
     public init(from decoder: Decoder) throws {
@@ -86,6 +91,7 @@ public struct Bottle: Codable, Sendable, Identifiable {
         synchronizationEnabled = try c.decodeIfPresent(Bool.self, forKey: .synchronizationEnabled) ?? true
         performance = try c.decodeIfPresent(PerformanceProfile.self, forKey: .performance) ?? .balanced
         disableSteamOverlay = try c.decodeIfPresent(Bool.self, forKey: .disableSteamOverlay) ?? false
+        overridePolicy = try c.decodeIfPresent(DllOverridePolicy.self, forKey: .overridePolicy) ?? .perApplication
         installedGraphicsDLLs = try c.decodeIfPresent([String].self, forKey: .installedGraphicsDLLs) ?? []
         extraEnvironment = try c.decodeIfPresent([String: String].self, forKey: .extraEnvironment) ?? [:]
     }

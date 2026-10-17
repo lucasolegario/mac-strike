@@ -12,17 +12,21 @@ import BottleEngine
 
 @main
 struct MacStrikeApp: App {
-    @StateObject private var store = BottleStore()
+    @StateObject private var model = AppModel()
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(store)
-                .frame(minWidth: 760, minHeight: 460)
+            RootView()
+                .environmentObject(model)
+                .frame(minWidth: 960, minHeight: 620)
+                .preferredColorScheme(.dark)
         }
+        .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unifiedCompact)
+        .defaultSize(width: 1040, height: 700)
         .commands {
-            CommandGroup(replacing: .newItem) {}  // a bottle manager has no "New Document"
+            CommandGroup(replacing: .newItem) {}  // a game launcher has no "New Document"
         }
     }
 }
