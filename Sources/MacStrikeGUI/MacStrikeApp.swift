@@ -12,14 +12,14 @@ import BottleEngine
 
 @main
 struct MacStrikeApp: App {
-    @StateObject private var store = BottleStore()
+    @StateObject private var model = AppModel()
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(store)
-                .frame(minWidth: 760, minHeight: 460)
+            Text("MacStrike")
+                .environmentObject(model)
+                .frame(minWidth: 960, minHeight: 620)
         }
         .commands {
             CommandGroup(replacing: .newItem) {}  // a bottle manager has no "New Document"
