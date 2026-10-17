@@ -20,9 +20,13 @@ struct MacStrikeApp: App {
             RootView()
                 .environmentObject(model)
                 .frame(minWidth: 960, minHeight: 620)
+                .preferredColorScheme(.dark)
         }
+        .windowStyle(.hiddenTitleBar)
+        .windowToolbarStyle(.unifiedCompact)
+        .defaultSize(width: 1040, height: 700)
         .commands {
-            CommandGroup(replacing: .newItem) {}  // a bottle manager has no "New Document"
+            CommandGroup(replacing: .newItem) {}  // a game launcher has no "New Document"
         }
     }
 }
