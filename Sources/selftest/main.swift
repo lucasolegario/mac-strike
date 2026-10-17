@@ -355,6 +355,29 @@ do {
           "later steps done out of order still reports the earliest gap")
 }
 
+print("GameDetection:")
+do {
+    let b = Bottle(name: "CS2", prefixPath: URL(fileURLWithPath: "/tmp/bottles/CS2"))
+    check(GameDetection.steamAppsCommon(in: b).path
+            == "/tmp/bottles/CS2/drive_c/Program Files (x86)/Steam/steamapps/common",
+          "steamapps/common path inside the bottle")
+    check(GameDetection.installDir(for: SteamApp.cs2, in: b)?.lastPathComponent
+            == "Counter-Strike Global Offensive",
+          "cs2 install dir name matches Steam's on-disk name")
+    check(GameDetection.installDir(for: 999999, in: b) == nil,
+          "unknown app id has no known install dir")
+    check(!GameDetection.isInstalled(appID: SteamApp.cs2, in: b),
+          "nothing installed under a bogus prefix")
+
+    // Create the directory and it should be detected.
+    let fm = FileManager.default
+    let dir = GameDetection.installDir(for: SteamApp.cs2, in: b)!
+    try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
+    check(GameDetection.isInstalled(appID: SteamApp.cs2, in: b),
+          "detects the game once its directory exists")
+    try? fm.removeItem(at: URL(fileURLWithPath: "/tmp/bottles/CS2"))
+}
+
 print("")
 if failures == 0 {
     print("All checks passed.")
