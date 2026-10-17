@@ -17,7 +17,7 @@ struct MacStrikeApp: App {
 
     var body: some Scene {
         WindowGroup {
-            Text("MacStrike")
+            RootView()
                 .environmentObject(model)
                 .frame(minWidth: 960, minHeight: 620)
         }
